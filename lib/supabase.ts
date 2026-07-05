@@ -1,7 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
 
-// ใช้ค่าว่างเป็น Default ถ้าหาตัวแปรไม่เจอ เพื่อไม่ให้ Build พัง
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-key';
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+  throw new Error('กรุณาตั้งค่า NEXT_PUBLIC_SUPABASE_URL และ NEXT_PUBLIC_SUPABASE_ANON_KEY ในไฟล์ .env.local');
+}
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
