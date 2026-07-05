@@ -8,6 +8,17 @@ export default function OfficerLogin() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
+  // ฟังก์ชันสำหรับเช็ค URL ให้รองรับทั้งเวลาเทสในคอม (localhost) และระบบจริงบนมือถือ (Vercel)
+  const getRedirectUrl = () => {
+    let url =
+      process?.env?.NEXT_PUBLIC_SITE_URL ?? // ดึงค่าจาก Environment Variable (Vercel)
+      (typeof window !== 'undefined' ? window.location.origin : ''); // ค่าเริ่มต้น
+      
+    // ตัดเครื่องหมาย / ตัวสุดท้ายออก (ถ้ามี) เพื่อป้องกัน URL เบิ้ล
+    url = url.replace(/\/+$/, '');
+    return url;
+  };
+
   // 1. ระบบล็อกอินด้วย Magic Link (ส่งลิงก์เข้าสู่ระบบทางอีเมลโดยไม่ต้องใช้รหัสผ่าน)
   const handleMagicLinkLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -17,8 +28,8 @@ export default function OfficerLogin() {
     const { error } = await supabase.auth.signInWithOtp({
       email: email,
       options: {
-        // เมื่อเจ้าหน้าที่กดลิงก์ในเมล ระบบจะพาเด้งกลับมาที่หน้า Dashboard โดยอัตโนมัติ
-        emailRedirectTo: `${window.location.origin}/officer/dashboard`,
+        // ใช้ getRedirectUrl() เพื่อให้ลิงก์กลับมาถูกที่เสมอ
+        emailRedirectTo: `${getRedirectUrl()}/officer/dashboard`,
       },
     });
 
@@ -35,7 +46,8 @@ export default function OfficerLogin() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/officer/dashboard`,
+        // ใช้ getRedirectUrl() เพื่อให้ลิงก์กลับมาถูกที่เสมอ
+        redirectTo: `${getRedirectUrl()}/officer/dashboard`,
       },
     });
     
@@ -47,7 +59,7 @@ export default function OfficerLogin() {
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800 flex flex-col items-center justify-center p-4 select-none">
       
-      {/* การ์ดฟอร์มเข้าสู่ระบบ ดีไซน์โค้งมน นูนเด่น มีมิติสไตล์เดียวกับฝั่งผู้ประสบภัย */}
+      {/* การ์ดฟอร์มเข้าสู่ระบบ */}
       <div className="max-w-md w-full bg-white p-8 rounded-[2.5rem] shadow-[0_10px_30px_rgba(0,0,0,0.03)] border border-slate-200/80 space-y-6 text-center">
         
         {/* ส่วนหัวโลโก้และชื่อระบบ */}
@@ -59,7 +71,7 @@ export default function OfficerLogin() {
           <p className="text-xs text-slate-400 mt-1 uppercase font-bold tracking-wider">Nexus Rescue Central Auth</p>
         </div>
 
-        {/* ปุ่ม Google Sign-In ชัดเจน มนสวย กดง่าย */}
+        {/* ปุ่ม Google Sign-In */}
         <button
           onClick={handleGoogleLogin}
           type="button"
