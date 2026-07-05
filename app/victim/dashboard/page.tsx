@@ -372,7 +372,7 @@ export default function VictimDashboard() {
                     {/* ขั้นตอนที่ 1 */}
                     <div className="relative">
                       <span className={`absolute -left-[31px] top-0 w-4 h-4 rounded-full border-2 bg-white ${
-                        latestReport.status === 'pending' || latestReport.status === 'accepted' || latestReport.status === 'completed'
+                        ['pending', 'assigned', 'accepted', 'completed', 'closed'].includes(latestReport.status)
                           ? 'border-emerald-500 bg-emerald-500 animate-pulse' : 'border-slate-300'
                       }`} />
                       <div className="font-bold text-slate-700">ส่งข้อมูลพิกัด SOS เข้าระบบสำเร็จ</div>
@@ -382,10 +382,10 @@ export default function VictimDashboard() {
                     {/* ขั้นตอนที่ 2 */}
                     <div className="relative">
                       <span className={`absolute -left-[31px] top-0 w-4 h-4 rounded-full border-2 bg-white ${
-                        latestReport.status === 'accepted' || latestReport.status === 'completed'
+                        ['assigned', 'accepted', 'completed', 'closed'].includes(latestReport.status)
                           ? 'border-emerald-500 bg-emerald-500' : 'border-slate-300'
                       }`} />
-                      <div className={`font-bold ${latestReport.status === 'accepted' ? 'text-blue-600' : 'text-slate-700'}`}>
+                      <div className={`font-bold ${['assigned', 'accepted'].includes(latestReport.status) ? 'text-blue-600' : 'text-slate-700'}`}>
                         กำลังส่งทีมกู้ภัยเข้าพื้นที่ช่วยเหลือ
                       </div>
                       <p className="text-xs text-slate-400 mt-0.5">ศูนย์ประสานงานกำลังจัดเตรียมสิ่งของเพื่อเดินทางเข้าพื้นที่ตามดาวเทียม</p>
@@ -394,7 +394,7 @@ export default function VictimDashboard() {
                     {/* ขั้นตอนที่ 3 */}
                     <div className="relative">
                       <span className={`absolute -left-[31px] top-0 w-4 h-4 rounded-full border-2 bg-white ${
-                        latestReport.status === 'completed' ? 'border-emerald-500 bg-emerald-500' : 'border-slate-300'
+                        ['completed', 'closed'].includes(latestReport.status) ? 'border-emerald-500 bg-emerald-500' : 'border-slate-300'
                       }`} />
                       <div className="font-bold text-slate-700">ภารกิจช่วยเหลือเสร็จสิ้น</div>
                       <p className="text-xs text-slate-400 mt-0.5">ผู้ประสบภัยได้รับการช่วยเหลือเข้าสู่พื้นที่ปลอดภัยเรียบร้อย</p>

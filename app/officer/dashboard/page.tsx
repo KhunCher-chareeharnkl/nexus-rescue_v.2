@@ -108,39 +108,36 @@ export default function OfficerDashboard() {
     return (R * c).toFixed(1);
   };
 
-  // 4. ฟังก์ชันอัปเดตสถานะ (แก้ไขใหม่ให้ลื่นไหลขึ้น)
- // เปลี่ยน parameter จาก accepted/completed เป็น assigned/closed
-const updateCaseStatus = async (reportId: string, nextStatus: 'assigned' | 'closed' | 'cannot_reach', reason?: string) => {
-  try {
-    // อัปเดตหน้าจอทันที (Optimistic Update)
-    setReports((prev) =>
-      prev.map((item) => (item.id === reportId ? { ...item, status: nextStatus } : item))
-    );
+  // 4. ฟังก์ชันอัปเดตสถานะ
+  const updateCaseStatus = async (reportId: string, nextStatus: 'assigned' | 'closed' | 'cannot_reach', reason?: string) => {
+    try {
+      // อัปเดตหน้าจอทันที (Optimistic Update)
+      setReports((prev) =>
+        prev.map((item) => (item.id === reportId ? { ...item, status: nextStatus } : item))
+      );
 
-    // อัปเดตฐานข้อมูล
-    const { error: updateReportError } = await supabase
-      .from('sos_reports')
-      .update({ status: nextStatus })
-      .eq('id', reportId);
+      // อัปเดตฐานข้อมูล
+      const { error: updateReportError } = await supabase
+        .from('sos_reports')
+        .update({ status: nextStatus })
+        .eq('id', reportId);
 
-    if (updateReportError) throw updateReportError;
+      if (updateReportError) throw updateReportError;
 
-    // ส่วนของตาราง assignments (ถ้ามี)
-    if (officer?.id) {
-      const assignmentData: any = {
-        sos_report_id: reportId,
-        rescuer_id: officer.id,
-        status: nextStatus,
-        notes: reason || null,
-      };
+      // ส่วนของตาราง assignments (ถ้ามี)
+      if (officer?.id) {
+        const assignmentData: any = {
+          sos_report_id: reportId,
+          rescuer_id: officer.id,
+          status: nextStatus,
+          notes: reason || null,
+        };
 
-      if (nextStatus === 'assigned') { // เปลี่ยนตรงนี้
-        assignmentData.accepted_at = new Date().toISOString();
-      } else if (nextStatus === 'closed') { // เปลี่ยนตรงนี้
-        assignmentData.completed_at = new Date().toISOString();
-      }
-      
-      // ... โค้ด insert ลง assignments เหมือนเดิม
+        if (nextStatus === 'assigned') {
+          assignmentData.accepted_at = new Date().toISOString();
+        } else if (nextStatus === 'closed') {
+          assignmentData.completed_at = new Date().toISOString();
+        }
 
         const { error: assignmentError } = await supabase
           .from('assignments')
@@ -231,11 +228,12 @@ const updateCaseStatus = async (reportId: string, nextStatus: 'assigned' | 'clos
             </div>
           </div>
 
+          {/* แก้ไขชื่อ filterStatus ให้ตรงกับ State ที่กำหนดไว้ */}
           <div className="flex flex-wrap bg-slate-100 p-1 rounded-2xl border border-slate-200/60 text-xs font-bold w-max">
             <button onClick={() => setFilterStatus('all')} className={`px-4 py-2 rounded-xl transition ${filterStatus === 'all' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>ทั้งหมด</button>
             <button onClick={() => setFilterStatus('pending')} className={`px-4 py-2 rounded-xl transition ${filterStatus === 'pending' ? 'bg-rose-500 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>🚨 รอคนไปช่วย</button>
-            <button onClick={() => setFilterStatus('accepted')} className={`px-4 py-2 rounded-xl transition ${filterStatus === 'accepted' ? 'bg-amber-500 text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>🚒 กำลังช่วย</button>
-            <button onClick={() => setFilterStatus('completed')} className={`px-4 py-2 rounded-xl transition ${filterStatus === 'completed' ? 'bg-emerald-500 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>✅ สำเร็จ</button>
+            <button onClick={() => setFilterStatus('assigned')} className={`px-4 py-2 rounded-xl transition ${filterStatus === 'assigned' ? 'bg-amber-500 text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>🚒 กำลังช่วย</button>
+            <button onClick={() => setFilterStatus('closed')} className={`px-4 py-2 rounded-xl transition ${filterStatus === 'closed' ? 'bg-emerald-500 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>✅ สำเร็จ</button>
             <button onClick={() => setFilterStatus('cannot_reach')} className={`px-4 py-2 rounded-xl transition ${filterStatus === 'cannot_reach' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>⚠️ เข้าไม่ถึง</button>
           </div>
         </div>
@@ -287,6 +285,18 @@ const updateCaseStatus = async (reportId: string, nextStatus: 'assigned' | 'clos
                       {item.items_requested && <p><strong className="text-slate-600">📦 ต้องการถุงยังชีพ:</strong> {item.items_requested}</p>}
                       <p className="text-slate-500 leading-relaxed"><strong className="text-slate-600">🏠 ที่อยู่/พิกัด:</strong> {item.location_details}</p>
                     </div>
+
+                    {/* เพิ่มปุ่มเปิดแผนที่ตรงนี้ (ทำงานเมื่อมีละติจูดและลองจิจูด) */}
+                    {item.latitude && item.longitude && (
+                      <a 
+                        href={`https://www.google.com/maps/dir/?api=1&destination=${item.latitude},${item.longitude}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-3 w-full flex items-center justify-center gap-2 bg-blue-50 hover:bg-blue-100 text-blue-600 font-bold py-2.5 rounded-xl transition-all border border-blue-200 text-xs shadow-sm"
+                      >
+                        <span>📍</span> เปิดแผนที่นำทาง (Google Maps)
+                      </a>
+                    )}
                   </div>
 
                   <div className="mt-5 pt-4 border-t border-slate-100">
