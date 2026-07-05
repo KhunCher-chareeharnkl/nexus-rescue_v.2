@@ -1,8 +1,7 @@
-import { createClient } from '@supabase/supabase-js'; // เพิ่มบรรทัดนี้ครับ
+import { createClient } from '@supabase/supabase-js';
 
-// ในไฟล์ utils/supabase.ts ของคุณ
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+// ใช้ค่าว่างเป็น Default ถ้าหาตัวแปรไม่เจอ เพื่อไม่ให้ Build พัง
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-key';
 
-// ตอนนี้ createClient จะใช้งานได้แล้ว
 export const supabase = createClient(supabaseUrl, supabaseKey);
