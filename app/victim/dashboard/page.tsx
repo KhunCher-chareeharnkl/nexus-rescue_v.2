@@ -22,6 +22,14 @@ export default function VictimDashboard() {
   const [lng, setLng] = useState<number | null>(null);
   const [gpsLoading, setGpsLoading] = useState(false);
 
+  // ตัวเลือกที่อยู่ ดึงมาจากตาราง thai_addresses (แบบ cascade จังหวัด -> อำเภอ -> ตำบล)
+  const [provinces, setProvinces] = useState<string[]>([]);
+  const [districts, setDistricts] = useState<string[]>([]);
+  const [subDistricts, setSubDistricts] = useState<string[]>([]);
+  const [loadingProvinces, setLoadingProvinces] = useState(false);
+  const [loadingDistricts, setLoadingDistricts] = useState(false);
+  const [loadingSubDistricts, setLoadingSubDistricts] = useState(false);
+
   // หน้าที่ 3: รายละเอียดภัยพิบัติ
   const [waterLevel, setWaterLevel] = useState(1);
   const [urgencyLevel, setUrgencyLevel] = useState('medium'); 
@@ -30,6 +38,7 @@ export default function VictimDashboard() {
   const [elderCount, setElderCount] = useState(0);
   const [specialNeeds, setSpecialNeeds] = useState('');
   const [neededItems, setNeededItems] = useState<string[]>([]);
+  const [customItem, setCustomItem] = useState('');
 
   // States สำหรับหน้าติดตามสถานะ (Status Tab)
   const [searchPhone, setSearchPhone] = useState('');
@@ -88,6 +97,97 @@ export default function VictimDashboard() {
       setNeededItems([...neededItems, item]);
     }
   };
+
+  const addCustomItem = () => {
+    const trimmed = customItem.trim();
+    if (!trimmed) return;
+    if (!neededItems.includes(trimmed)) {
+      setNeededItems([...neededItems, trimmed]);
+    }
+    setCustomItem('');
+  };
+
+  // ===== ดึงตัวเลือกที่อยู่จากตาราง thai_addresses แบบ cascade =====
+  const fetchProvinces = async () => {
+    setLoadingProvinces(true);
+    try {
+      const { data, error } = await supabase
+        .from('thai_addresses')
+        .select('province')
+        .order('province', { ascending: true });
+      if (error) throw error;
+      const unique = Array.from(new Set((data || []).map((d) => d.province)));
+      setProvinces(unique);
+    } catch (err) {
+      console.error('Error fetching provinces:', err);
+    } finally {
+      setLoadingProvinces(false);
+    }
+  };
+
+  const fetchDistricts = async (selectedProvince: string) => {
+    setLoadingDistricts(true);
+    try {
+      const { data, error } = await supabase
+        .from('thai_addresses')
+        .select('district')
+        .eq('province', selectedProvince)
+        .order('district', { ascending: true });
+      if (error) throw error;
+      const unique = Array.from(new Set((data || []).map((d) => d.district)));
+      setDistricts(unique);
+    } catch (err) {
+      console.error('Error fetching districts:', err);
+    } finally {
+      setLoadingDistricts(false);
+    }
+  };
+
+  const fetchSubDistricts = async (selectedProvince: string, selectedDistrict: string) => {
+    setLoadingSubDistricts(true);
+    try {
+      const { data, error } = await supabase
+        .from('thai_addresses')
+        .select('sub_district')
+        .eq('province', selectedProvince)
+        .eq('district', selectedDistrict)
+        .order('sub_district', { ascending: true });
+      if (error) throw error;
+      const unique = Array.from(new Set((data || []).map((d) => d.sub_district)));
+      setSubDistricts(unique);
+    } catch (err) {
+      console.error('Error fetching sub-districts:', err);
+    } finally {
+      setLoadingSubDistricts(false);
+    }
+  };
+
+  // โหลดรายชื่อจังหวัดครั้งแรกที่ component mount
+  useEffect(() => {
+    fetchProvinces();
+  }, []);
+
+  // เมื่อเลือกจังหวัดใหม่ -> โหลดอำเภอใหม่ และเคลียร์ค่าอำเภอ/ตำบลเดิมทิ้ง
+  useEffect(() => {
+    if (province) {
+      fetchDistricts(province);
+    } else {
+      setDistricts([]);
+    }
+    setDistrict('');
+    setSubDistrict('');
+    setSubDistricts([]);
+  }, [province]);
+
+  // เมื่อเลือกอำเภอใหม่ -> โหลดตำบลใหม่ และเคลียร์ค่าตำบลเดิมทิ้ง
+  useEffect(() => {
+    if (province && district) {
+      fetchSubDistricts(province, district);
+    } else {
+      setSubDistricts([]);
+    }
+    setSubDistrict('');
+  }, [district]);
 
   const fetchReportStatus = async (targetPhone: string) => {
     if (!targetPhone || targetPhone.length < 10) return;
@@ -148,7 +248,7 @@ export default function VictimDashboard() {
       setSearchPhone(phone);
       await fetchReportStatus(phone);
 
-      setFirstName(''); setLastName(''); setPhone(''); setProvince(''); setDistrict(''); setSubDistrict(''); setAddressDetails(''); setLat(null); setLng(null); setNeededItems([]); setSpecialNeeds('');
+      setFirstName(''); setLastName(''); setPhone(''); setProvince(''); setDistrict(''); setSubDistrict(''); setAddressDetails(''); setLat(null); setLng(null); setNeededItems([]); setSpecialNeeds(''); setCustomItem(''); setAdultCount(1); setChildCount(0); setElderCount(0);
       setFormStep(1); 
       setActiveTab('status');
 
@@ -227,27 +327,29 @@ export default function VictimDashboard() {
                 <div>
                   <label className="block text-xs font-bold text-slate-600 mb-1">จังหวัด</label>
                   <select value={province} onChange={(e) => setProvince(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none">
-                    <option value="">-- กรุณาเลือกจังหวัด --</option>
-                    <option value="สงขลา">สงขลา</option>
-                    <option value="พัทลุง">พัทลุง</option>
-                    <option value="นครศรีธรรมราช">นครศรีธรรมราช</option>
+                    <option value="">{loadingProvinces ? '⏳ กำลังโหลด...' : '-- กรุณาเลือกจังหวัด --'}</option>
+                    {provinces.map((p) => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
                   </select>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-bold text-slate-600 mb-1">อำเภอ</label>
-                    <select value={district} onChange={(e) => setDistrict(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none">
-                      <option value="">-- เลือกอำเภอ --</option>
-                      <option value="หาดใหญ่">หาดใหญ่</option>
-                      <option value="เมืองสงขลา">เมืองสงขลา</option>
+                    <select value={district} onChange={(e) => setDistrict(e.target.value)} disabled={!province || loadingDistricts} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none disabled:opacity-50">
+                      <option value="">{loadingDistricts ? '⏳ กำลังโหลด...' : '-- เลือกอำเภอ --'}</option>
+                      {districts.map((d) => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
                     </select>
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-600 mb-1">ตำบล</label>
-                    <select value={subDistrict} onChange={(e) => setSubDistrict(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none">
-                      <option value="">-- เลือกตำบล --</option>
-                      <option value="คอหงส์">คอหงส์</option>
-                      <option value="หาดใหญ่">หาดใหญ่</option>
+                    <select value={subDistrict} onChange={(e) => setSubDistrict(e.target.value)} disabled={!district || loadingSubDistricts} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none disabled:opacity-50">
+                      <option value="">{loadingSubDistricts ? '⏳ กำลังโหลด...' : '-- เลือกตำบล --'}</option>
+                      {subDistricts.map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
                     </select>
                   </div>
                 </div>
@@ -290,6 +392,37 @@ export default function VictimDashboard() {
                   </div>
                 </div>
                 <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-2">👥 จำนวนผู้ประสบภัย (คน)</label>
+                  <div className="space-y-2">
+                    {[
+                      { label: '🧑 ผู้ใหญ่', value: adultCount, setValue: setAdultCount },
+                      { label: '🧒 เด็ก', value: childCount, setValue: setChildCount },
+                      { label: '👵 ผู้สูงอายุ', value: elderCount, setValue: setElderCount },
+                    ].map((row) => (
+                      <div key={row.label} className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5">
+                        <span className="text-xs font-bold text-slate-600">{row.label}</span>
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => row.setValue(Math.max(0, row.value - 1))}
+                            className="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-slate-300 text-slate-500 font-bold shadow-sm active:scale-95 transition-all"
+                          >
+                            −
+                          </button>
+                          <span className="w-6 text-center text-sm font-bold text-slate-800">{row.value}</span>
+                          <button
+                            type="button"
+                            onClick={() => row.setValue(Math.min(20, row.value + 1))}
+                            className="w-8 h-8 flex items-center justify-center rounded-full bg-blue-600 text-white font-bold shadow-sm active:scale-95 transition-all"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div>
                   <label className="block text-xs font-bold text-slate-600 mb-2">📦 สิ่งของบรรเทาทุกข์ที่ต้องการ</label>
                   <div className="flex flex-wrap gap-2">
                     {availableItems.map((item) => {
@@ -299,6 +432,41 @@ export default function VictimDashboard() {
                       );
                     })}
                   </div>
+
+                  {/* ช่องพิมพ์สิ่งของเพิ่มเติมที่ไม่มีในลิสต์ด้านบน */}
+                  <div className="flex gap-2 mt-3">
+                    <input
+                      type="text"
+                      value={customItem}
+                      onChange={(e) => setCustomItem(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustomItem(); } }}
+                      placeholder="พิมพ์สิ่งของอื่นๆ ที่ต้องการ แล้วกด +"
+                      className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-emerald-400"
+                    />
+                    <button type="button" onClick={addCustomItem} className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-4 rounded-xl text-xs shadow-sm">＋ เพิ่ม</button>
+                  </div>
+
+                  {/* แสดงรายการที่พิมพ์เพิ่มเอง (ที่ไม่ได้อยู่ใน availableItems) เป็น chip ลบได้ */}
+                  {neededItems.filter((i) => !availableItems.includes(i)).length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {neededItems.filter((i) => !availableItems.includes(i)).map((item) => (
+                        <span key={item} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-blue-50 border border-blue-200 text-blue-700">
+                          {item}
+                          <button type="button" onClick={() => toggleItem(item)} className="text-blue-400 hover:text-blue-600 font-bold">✕</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-2">⚠️ ความต้องการพิเศษ / หมายเหตุเพิ่มเติม</label>
+                  <textarea
+                    rows={2}
+                    value={specialNeeds}
+                    onChange={(e) => setSpecialNeeds(e.target.value)}
+                    placeholder="เช่น มีผู้ป่วยติดเตียง / ผู้พิการ / หญิงตั้งครรภ์ / โรคประจำตัวที่ต้องการยาเฉพาะ"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-rose-400"
+                  />
                 </div>
                 <div className="grid grid-cols-2 gap-3 pt-2">
                   {/* 🛠️ แก้ไขให้สามารถกดถอยกลับไปหน้า 2 (พิกัดสถานที่) ได้อย่างถูกต้องตรงตามที่ระบุ */}
