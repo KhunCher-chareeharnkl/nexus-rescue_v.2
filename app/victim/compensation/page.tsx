@@ -1,406 +1,645 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { getSosReportId } from '@/lib/session';
 
-type DamageType = 'housing' | 'vehicle' | 'agriculture' | 'property' | 'other';
-type HomeStatus = 'returned' | 'temporary_shelter' | 'cannot_return';
-type AddressRow = { province: string; district: string; sub_district: string; zip_code: string | null };
+// เพิ่ม 'create' เข้ามา — สำหรับกรณีค้นหาแล้วไม่เจอเคสเดิม ต้องแจ้งความเสียหายใหม่
+type Step = 'lookup' | 'select' | 'confirm' | 'create' | 'done';
 
-const DAMAGE_TYPE_OPTIONS: { value: DamageType; label: string }[] = [
-  { value: 'housing', label: 'ที่อยู่อาศัย' },
-  { value: 'vehicle', label: 'ยานพาหนะ' },
-  { value: 'agriculture', label: 'พื้นที่เกษตรกรรม' },
-  { value: 'property', label: 'ทรัพย์สินอื่นๆ' },
-  { value: 'other', label: 'อื่นๆ' },
-];
+interface DamageReport {
+  id: string;
+  full_name: string;
+  phone: string;
+  province: string;
+  district: string;
+  sub_district: string;
+  address_details?: string | null;
+  damage_type?: string | null;
+  damage_value?: number | null;
+  description?: string | null;
+  image_urls: string[];
+  home_status?: string | null;
+  status: 'pending' | 'verified' | 'approved' | 'rejected';
+  incident_date?: string | null;
+  id_card_number?: string | null;
+  id_card_image_url?: string | null;
+  victim_confirmed: boolean;
+  victim_confirmed_at?: string | null;
+  created_at: string;
+}
 
-const HOME_STATUS_OPTIONS: { value: HomeStatus; label: string }[] = [
-  { value: 'temporary_shelter', label: 'พักอยู่ในศูนย์พักพิงชั่วคราว' },
-  { value: 'returned', label: 'กลับเข้าที่พักอาศัยแล้ว' },
-  { value: 'cannot_return', label: 'ยังไม่สามารถกลับที่พักอาศัยได้' },
-];
+const DAMAGE_TYPE_LABEL: Record<string, string> = {
+  housing: '🏠 ที่อยู่อาศัย',
+  vehicle: '🚗 ยานพาหนะ',
+  agriculture: '🌾 พืชผล/ปศุสัตว์',
+  property: '📦 ทรัพย์สินอื่น',
+  other: '📋 อื่นๆ',
+};
 
-const MAX_IMAGES = 5;
+const HOME_STATUS_LABEL: Record<string, string> = {
+  returned: '✅ กลับเข้าบ้านได้แล้ว',
+  temporary_shelter: '🏕️ ยังอยู่ที่พักชั่วคราว',
+  cannot_return: '❌ กลับเข้าบ้านไม่ได้',
+};
 
-export default function DamageReportForm() {
-  const router = useRouter();
-  const [formStep, setFormStep] = useState(1);
+const STATUS_LABEL: Record<string, { text: string; color: string; bg: string }> = {
+  pending: { text: 'รอตรวจสอบ', color: '#92400E', bg: '#FEF3C7' },
+  verified: { text: 'ตรวจสอบแล้ว', color: '#1D4ED8', bg: '#DBEAFE' },
+  approved: { text: 'อนุมัติเยียวยาแล้ว', color: '#15803D', bg: '#DCFCE7' },
+  rejected: { text: 'ไม่อนุมัติ', color: '#B91C1C', bg: '#FEE2E2' },
+};
+
+export default function VictimCompensationConfirm() {
+  const [step, setStep] = useState<Step>('lookup');
+  const [fullName, setFullName] = useState('');
+  const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
-  const [loadingSosData, setLoadingSosData] = useState(true);
-  const [linkedSosId, setLinkedSosId] = useState<string | null>(null);
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const [noMatchFound, setNoMatchFound] = useState(false); // true = ค้นหาแล้วไม่เจอเลยสักเคส
 
-  // ที่อยู่ (cascade จังหวัด -> อำเภอ -> ตำบล)
-  const [addressData, setAddressData] = useState<AddressRow[]>([]);
-  const [provinces, setProvinces] = useState<string[]>([]);
-  const [districts, setDistricts] = useState<string[]>([]);
-  const [subDistricts, setSubDistricts] = useState<string[]>([]);
+  const [reports, setReports] = useState<DamageReport[]>([]);
+  const [selected, setSelected] = useState<DamageReport | null>(null);
 
-  const [formData, setFormData] = useState({
-    full_name: '',
-    phone: '',
-    province: '',
-    district: '',
-    sub_district: '',
-    address_details: '',
-    damage_type: 'housing' as DamageType,
-    damage_value: '',
-    description: '',
-    home_status: 'temporary_shelter' as HomeStatus,
-  });
+  // ── ข้อมูลที่อยู่ (ใช้เฉพาะตอนแจ้งใหม่ — เคสเดิมมีที่อยู่อยู่แล้วไม่ต้องกรอกซ้ำ) ──
+  const [newFullName, setNewFullName] = useState('');
+  const [newPhone, setNewPhone] = useState('');
+  const [newProvince, setNewProvince] = useState('');
+  const [newDistrict, setNewDistrict] = useState('');
+  const [newSubDistrict, setNewSubDistrict] = useState('');
+  const [newAddressDetails, setNewAddressDetails] = useState('');
 
-  // แนบรูปความเสียหาย
-  const [images, setImages] = useState<File[]>([]);
-  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
-  const [uploadProgress, setUploadProgress] = useState<string | null>(null);
+  // ── ฟอร์มยืนยันตัวเอง (ใช้ร่วมกันทั้งเคส "ยืนยันของเดิม" และ "แจ้งใหม่") ──
+  const [idCardNumber, setIdCardNumber] = useState('');
+  const [incidentDate, setIncidentDate] = useState('');
+  const [damageType, setDamageType] = useState('');
+  const [damageValue, setDamageValue] = useState('');
+  const [description, setDescription] = useState('');
+  const [homeStatus, setHomeStatus] = useState('');
+  const [idCardFile, setIdCardFile] = useState<File | null>(null);
+  const [damagePhotos, setDamagePhotos] = useState<File[]>([]);
+  const [saving, setSaving] = useState(false);
 
-  // โหลดที่อยู่ทั้งหมด + เช็คว่ามีเคส SOS ผูกอยู่ไหม เพื่อ prefill
-  useEffect(() => {
-    let active = true;
+  const resetAll = () => {
+    setStep('lookup');
+    setFullName('');
+    setPhone('');
+    setSelected(null);
+    setNoMatchFound(false);
+    setError('');
+    setNewFullName(''); setNewPhone(''); setNewProvince(''); setNewDistrict('');
+    setNewSubDistrict(''); setNewAddressDetails('');
+    setIdCardNumber(''); setIncidentDate(''); setDamageType(''); setDamageValue('');
+    setDescription(''); setHomeStatus(''); setIdCardFile(null); setDamagePhotos([]);
+  };
 
-    async function init() {
-      const { data } = await supabase.from('thai_addresses').select('province, district, sub_district, zip_code');
-      if (active && data) {
-        setAddressData(data as AddressRow[]);
-        setProvinces([...new Set(data.map((d) => d.province))].sort());
-      }
+  const goToCreate = () => {
+    // เอาชื่อ-เบอร์ที่พิมพ์ไว้ตอนค้นหามาเติมให้ในฟอร์มแจ้งใหม่ ไม่ต้องพิมพ์ซ้ำ
+    setNewFullName(fullName);
+    setNewPhone(phone);
+    setError('');
+    setStep('create');
+  };
 
-      const sosId = getSosReportId();
-      if (sosId) {
-        const { data: sosData } = await supabase
-          .from('sos_reports')
-          .select('full_name, phone, province, district, sub_district, address_details')
-          .eq('id', sosId)
-          .single();
-
-        if (active && sosData) {
-          setLinkedSosId(sosId);
-          setFormData((prev) => ({
-            ...prev,
-            full_name: sosData.full_name ?? '',
-            phone: sosData.phone ?? '',
-            province: sosData.province ?? '',
-            district: sosData.district ?? '',
-            sub_district: sosData.sub_district ?? '',
-            address_details: sosData.address_details ?? '',
-          }));
-          if (data && sosData.province) {
-            setDistricts(
-              [...new Set(data.filter((d) => d.province === sosData.province).map((d) => d.district))].sort()
-            );
-          }
-          if (data && sosData.province && sosData.district) {
-            setSubDistricts(
-              [
-                ...new Set(
-                  data
-                    .filter((d) => d.province === sosData.province && d.district === sosData.district)
-                    .map((d) => d.sub_district)
-                ),
-              ].sort()
-            );
-          }
-        }
-      }
-      if (active) setLoadingSosData(false);
+  const handleLookup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setNoMatchFound(false);
+    if (!fullName.trim() || !phone.trim()) {
+      setError('กรุณากรอกชื่อ-นามสกุล และเบอร์โทรให้ครบ');
+      return;
     }
-
-    init();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
-
-  const handleProvinceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const selectedProvince = e.target.value;
-    setFormData({ ...formData, province: selectedProvince, district: '', sub_district: '' });
-    setDistricts([...new Set(addressData.filter((d) => d.province === selectedProvince).map((d) => d.district))].sort());
-    setSubDistricts([]);
-  };
-
-  const handleDistrictChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const selectedDistrict = e.target.value;
-    setFormData({ ...formData, district: selectedDistrict, sub_district: '' });
-    setSubDistricts(
-      [
-        ...new Set(
-          addressData
-            .filter((d) => d.province === formData.province && d.district === selectedDistrict)
-            .map((d) => d.sub_district)
-        ),
-      ].sort()
-    );
-  };
-
-  function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
-    if (files.length === 0) return;
-
-    const combined = [...images, ...files].slice(0, MAX_IMAGES);
-    setImages(combined);
-    setImagePreviews(combined.map((f) => URL.createObjectURL(f)));
-    e.target.value = '';
-  }
-
-  function removeImage(index: number) {
-    const next = images.filter((_, i) => i !== index);
-    setImages(next);
-    setImagePreviews(next.map((f) => URL.createObjectURL(f)));
-  }
-
-  async function uploadImages(): Promise<string[]> {
-    const urls: string[] = [];
-    for (let i = 0; i < images.length; i++) {
-      setUploadProgress(`กำลังอัปโหลดรูปที่ ${i + 1}/${images.length}...`);
-      const file = images[i];
-      const ext = file.name.split('.').pop() || 'jpg';
-      const path = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-
-      const { error: uploadError } = await supabase.storage.from('damage-photos').upload(path, file);
-      if (uploadError) {
-        throw new Error(`อัปโหลดรูปที่ ${i + 1} ไม่สำเร็จ: ${uploadError.message}`);
-      }
-      const { data: publicUrlData } = supabase.storage.from('damage-photos').getPublicUrl(path);
-      urls.push(publicUrlData.publicUrl);
-    }
-    setUploadProgress(null);
-    return urls;
-  }
-
-  const validateStep1 = () => formData.full_name.trim().length > 0 && formData.phone.trim().length > 0;
-  const validateStep2 = () => !!formData.province && !!formData.district && !!formData.sub_district;
-
-  const handleSubmit = async () => {
-    setSubmitError(null);
     setLoading(true);
     try {
-      const imageUrls = images.length > 0 ? await uploadImages() : [];
+      const { data, error: qErr } = await supabase
+        .from('damage_reports')
+        .select('*')
+        .eq('phone', phone.trim())
+        .ilike('full_name', fullName.trim())
+        .order('created_at', { ascending: false });
 
-      const { error } = await supabase.from('damage_reports').insert({
-        sos_report_id: linkedSosId,
-        full_name: formData.full_name.trim(),
-        phone: formData.phone.trim(),
-        province: formData.province,
-        district: formData.district,
-        sub_district: formData.sub_district,
-        address_details: formData.address_details.trim() || null,
-        damage_type: formData.damage_type,
-        damage_value: formData.damage_value ? Number(formData.damage_value) : null,
-        description: formData.description.trim() || null,
-        image_urls: imageUrls,
-        home_status: formData.home_status,
-        status: 'pending',
-      });
-
-      if (error) throw error;
-
-      alert('✅ ยื่นคำร้องขอรับเงินเยียวยาสำเร็จ');
-      router.push('/');
+      if (qErr) throw qErr;
+      if (!data || data.length === 0) {
+        setError('ไม่พบข้อมูลการแจ้งความเสียหายที่ตรงกับชื่อและเบอร์โทรนี้');
+        setNoMatchFound(true);
+        return;
+      }
+      setReports(data as DamageReport[]);
+      if (data.length === 1) {
+        openConfirmOrDone(data[0] as DamageReport);
+      } else {
+        setStep('select');
+      }
     } catch (err: any) {
-      setSubmitError(err.message || 'ส่งคำร้องไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+      setError(`เกิดข้อผิดพลาด: ${err.message}`);
     } finally {
       setLoading(false);
-      setUploadProgress(null);
     }
   };
 
-  const inputClass = 'w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100';
+  const openConfirmOrDone = (r: DamageReport) => {
+    setSelected(r);
+    if (r.victim_confirmed) {
+      setStep('done');
+    } else {
+      setIdCardNumber(r.id_card_number ?? '');
+      setIncidentDate(r.incident_date ?? '');
+      setDamageType(r.damage_type ?? '');
+      setDamageValue(r.damage_value != null ? String(r.damage_value) : '');
+      setDescription(r.description ?? '');
+      setHomeStatus(r.home_status ?? '');
+      setStep('confirm');
+    }
+  };
+
+  const uploadFile = async (file: File, prefix: string) => {
+    const ext = file.name.split('.').pop();
+    const path = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const { error: upErr } = await supabase.storage.from('damage-photos').upload(path, file);
+    if (upErr) throw upErr;
+    const { data } = supabase.storage.from('damage-photos').getPublicUrl(path);
+    return data.publicUrl;
+  };
+
+  // เช็คฟิลด์ยืนยันตัวตนที่ใช้ร่วมกันทั้ง 2 flow (บัตรประชาชน/วันที่/ประเภทความเสียหาย)
+  const validateIdentityFields = () => {
+    if (!idCardNumber.trim() || idCardNumber.trim().length !== 13) {
+      setError('กรุณากรอกเลขบัตรประชาชนให้ครบ 13 หลัก');
+      return false;
+    }
+    if (!incidentDate) {
+      setError('กรุณาระบุวันที่เกิดความเสียหาย');
+      return false;
+    }
+    if (!damageType) {
+      setError('กรุณาเลือกประเภทความเสียหาย');
+      return false;
+    }
+    return true;
+  };
+
+  // ── กรณีที่ 1: มีเคสอยู่แล้ว แค่มายืนยันตัวตน + เติมรายละเอียด ──
+  const handleConfirm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selected) return;
+    setError('');
+    if (!validateIdentityFields()) return;
+
+    setSaving(true);
+    try {
+      let idCardImageUrl = selected.id_card_image_url ?? null;
+      if (idCardFile) {
+        idCardImageUrl = await uploadFile(idCardFile, 'idcard');
+      }
+
+      const newDamagePhotoUrls: string[] = [];
+      for (const f of damagePhotos) {
+        newDamagePhotoUrls.push(await uploadFile(f, 'damage'));
+      }
+      const mergedImageUrls = [...(selected.image_urls ?? []), ...newDamagePhotoUrls];
+
+      const { error: updErr } = await supabase
+        .from('damage_reports')
+        .update({
+          id_card_number: idCardNumber.trim(),
+          id_card_image_url: idCardImageUrl,
+          incident_date: incidentDate,
+          damage_type: damageType,
+          damage_value: damageValue ? Number(damageValue) : null,
+          description: description.trim() || null,
+          home_status: homeStatus || null,
+          image_urls: mergedImageUrls,
+          victim_confirmed: true,
+          victim_confirmed_at: new Date().toISOString(),
+        })
+        .eq('id', selected.id);
+
+      if (updErr) throw updErr;
+
+      setSelected({
+        ...selected,
+        id_card_number: idCardNumber.trim(),
+        id_card_image_url: idCardImageUrl,
+        incident_date: incidentDate,
+        damage_type: damageType,
+        damage_value: damageValue ? Number(damageValue) : null,
+        description: description.trim() || null,
+        home_status: homeStatus || null,
+        image_urls: mergedImageUrls,
+        victim_confirmed: true,
+        victim_confirmed_at: new Date().toISOString(),
+      });
+      setStep('done');
+    } catch (err: any) {
+      setError(`บันทึกไม่สำเร็จ: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ── กรณีที่ 2: ไม่เคยมีเคสมาก่อน แจ้งความเสียหายใหม่ + ยืนยันตัวตนในขั้นตอนเดียว ──
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    if (!newFullName.trim() || !newPhone.trim()) {
+      setError('กรุณากรอกชื่อ-นามสกุล และเบอร์โทรให้ครบ');
+      return;
+    }
+    if (!newProvince.trim() || !newDistrict.trim() || !newSubDistrict.trim()) {
+      setError('กรุณากรอกที่อยู่ให้ครบ (จังหวัด / อำเภอ / ตำบล)');
+      return;
+    }
+    if (!validateIdentityFields()) return;
+
+    setSaving(true);
+    try {
+      let idCardImageUrl: string | null = null;
+      if (idCardFile) {
+        idCardImageUrl = await uploadFile(idCardFile, 'idcard');
+      }
+
+      const newDamagePhotoUrls: string[] = [];
+      for (const f of damagePhotos) {
+        newDamagePhotoUrls.push(await uploadFile(f, 'damage'));
+      }
+
+      const { data, error: insErr } = await supabase
+        .from('damage_reports')
+        .insert({
+          full_name: newFullName.trim(),
+          phone: newPhone.trim(),
+          province: newProvince.trim(),
+          district: newDistrict.trim(),
+          sub_district: newSubDistrict.trim(),
+          address_details: newAddressDetails.trim() || null,
+          id_card_number: idCardNumber.trim(),
+          id_card_image_url: idCardImageUrl,
+          incident_date: incidentDate,
+          damage_type: damageType,
+          damage_value: damageValue ? Number(damageValue) : null,
+          description: description.trim() || null,
+          home_status: homeStatus || null,
+          image_urls: newDamagePhotoUrls,
+          victim_confirmed: true,
+          victim_confirmed_at: new Date().toISOString(),
+          status: 'pending',
+        })
+        .select()
+        .single();
+
+      if (insErr) throw insErr;
+
+      setSelected(data as DamageReport);
+      setStep('done');
+    } catch (err: any) {
+      setError(`บันทึกไม่สำเร็จ: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20">
-      <header className="bg-gradient-to-br from-emerald-600 to-emerald-500 text-white p-8 rounded-b-[3rem] shadow-lg mb-6">
-        <div className="flex items-center gap-3 mb-4">
-            <button
-              onClick={() => router.back()}
-              aria-label="ย้อนกลับ"
-              className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center active:scale-95 transition-transform"
-            >
-              ←
-            </button>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider opacity-80">
-                Nexus Rescue
-              </p>
-              <h1 className="text-xl font-bold tracking-tight">ยื่นคำร้องขอรับเงินเยียวยา</h1>
-            </div>
-          </div>
-      </header>
+    <div className="min-h-screen bg-slate-100 text-slate-800 flex flex-col items-center justify-center p-4">
+      <div className="max-w-md w-full bg-white p-8 rounded-[2.5rem] shadow-[0_10px_30px_rgba(0,0,0,0.03)] border border-slate-200/80 space-y-6">
 
-      <div className="max-w-xl mx-auto px-4">
-        <div className="w-full bg-slate-200 h-2 rounded-full mb-4 overflow-hidden">
-          <div className="bg-emerald-600 h-2 rounded-full transition-all duration-300" style={{ width: `${(formStep / 3) * 100}%` }} />
+        <div className="text-center">
+          <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center text-3xl font-bold mx-auto shadow-[inset_0_2px_4px_rgba(37,99,235,0.06)] border border-blue-100 mb-4">
+            📋
+          </div>
+          <h1 className="text-xl font-bold tracking-tight text-slate-800">ยืนยันตัวตนเพื่อยื่นเยียวยา</h1>
+          <p className="text-xs text-slate-400 mt-1">ต้องยืนยันตัวตนก่อน จึงจะยื่นขอรับเงินเยียวยาได้</p>
         </div>
 
-        {linkedSosId && !loadingSosData && (
-          <div className="bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs font-semibold rounded-2xl p-3 mb-4">
-            🔗 เชื่อมกับเคสขอความช่วยเหลือที่เคยแจ้งไว้แล้ว ระบบดึงข้อมูลชื่อ/ที่อยู่มาให้อัตโนมัติ
+        {error && (
+          <div className="text-xs font-bold p-4 bg-red-50/60 border border-red-100 rounded-2xl text-red-600 leading-relaxed">
+            {error}
           </div>
         )}
 
-        {submitError && (
-          <div className="bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-2xl p-3 mb-4">
-            {submitError}
-          </div>
-        )}
-
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 space-y-4">
-          {formStep === 1 && (
-            <>
-              <h2 className="font-bold text-slate-700">ข้อมูลผู้ประสบภัย</h2>
-              <input
-                name="full_name"
-                value={formData.full_name}
-                placeholder="ชื่อ-นามสกุล"
-                onChange={handleChange}
-                className={inputClass}
-              />
-              <input
-                name="phone"
-                value={formData.phone}
-                placeholder="เบอร์โทรศัพท์ติดต่อ"
-                onChange={handleChange}
-                className={inputClass}
-              />
+        {/* STEP 1: ค้นหาด้วยชื่อ+เบอร์โทร */}
+        {step === 'lookup' && (
+          <div className="space-y-4">
+            <form onSubmit={handleLookup} className="space-y-4 text-left">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 pl-1">ชื่อ-นามสกุล</label>
+                <input
+                  type="text" required value={fullName} onChange={e => setFullName(e.target.value)}
+                  placeholder="เช่น สมชาย ใจดี"
+                  className="w-full p-4 rounded-2xl bg-slate-50 border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 pl-1">เบอร์โทรที่แจ้งไว้</label>
+                <input
+                  type="tel" required value={phone} onChange={e => setPhone(e.target.value)}
+                  placeholder="08xxxxxxxx"
+                  className="w-full p-4 rounded-2xl bg-slate-50 border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                />
+              </div>
               <button
-                onClick={() => validateStep1() && setFormStep(2)}
-                className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-bold hover:bg-emerald-700 transition-colors"
+                type="submit" disabled={loading}
+                className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold p-4 rounded-2xl text-sm shadow-[0_6px_16px_rgba(37,99,235,0.2)] active:scale-[0.98] transition-all disabled:opacity-50"
               >
-                ถัดไป
+                {loading ? '⏳ กำลังค้นหา...' : '🔍 ค้นหาข้อมูลของฉัน'}
               </button>
-            </>
-          )}
+            </form>
 
-          {formStep === 2 && (
-            <>
-              <h2 className="font-bold text-slate-700">รายละเอียดที่อยู่ที่เสียหาย</h2>
-              <select name="province" value={formData.province} onChange={handleProvinceChange} className={inputClass}>
-                <option value="">เลือกจังหวัด</option>
-                {provinces.map((p) => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
-              <select
-                name="district"
-                value={formData.district}
-                onChange={handleDistrictChange}
-                disabled={!formData.province}
-                className={`${inputClass} disabled:opacity-50`}
+            {/* ค้นหาแล้วไม่เจอ -> เสนอทางแจ้งใหม่ทันที */}
+            {noMatchFound && (
+              <button
+                type="button"
+                onClick={goToCreate}
+                className="w-full text-sm font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-100 rounded-2xl p-4 transition-all"
               >
-                <option value="">เลือกอำเภอ</option>
-                {districts.map((d) => (
-                  <option key={d} value={d}>{d}</option>
-                ))}
-              </select>
-              <select
-                name="sub_district"
-                value={formData.sub_district}
-                onChange={handleChange}
-                disabled={!formData.district}
-                className={`${inputClass} disabled:opacity-50`}
+                📝 ยังไม่เคยแจ้งไว้เลย — แจ้งความเสียหายใหม่
+              </button>
+            )}
+
+            {/* ทางลัดสำหรับคนที่รู้อยู่แล้วว่ายังไม่เคยแจ้ง ไม่ต้องรอค้นหาก่อนก็ได้ */}
+            {!noMatchFound && (
+              <button
+                type="button"
+                onClick={goToCreate}
+                className="w-full text-xs font-bold text-slate-400 hover:text-slate-600 underline underline-offset-2"
               >
-                <option value="">เลือกตำบล</option>
-                {subDistricts.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-              <textarea
-                name="address_details"
-                value={formData.address_details}
-                placeholder="รายละเอียดที่อยู่บ้านเลขที่/หมู่บ้าน"
-                onChange={handleChange}
-                className={`${inputClass} h-20`}
-              />
-              <div className="flex gap-2">
-                <button onClick={() => setFormStep(1)} className="flex-1 bg-slate-200 py-4 rounded-2xl font-bold text-slate-600">ย้อนกลับ</button>
+                หรือถ้ายังไม่เคยแจ้งความเสียหายมาก่อนเลย กดที่นี่เพื่อแจ้งใหม่
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* STEP 2: เลือกเคส ถ้ามีมากกว่า 1 รายการ */}
+        {step === 'select' && (
+          <div className="space-y-3 text-left">
+            <p className="text-xs font-bold text-slate-500">พบ {reports.length} รายการ กรุณาเลือกเคสที่ต้องการยื่นเยียวยา</p>
+            {reports.map(r => {
+              const st = STATUS_LABEL[r.status];
+              return (
                 <button
-                  onClick={() => validateStep2() && setFormStep(3)}
-                  className="flex-1 bg-emerald-600 text-white py-4 rounded-2xl font-bold hover:bg-emerald-700 transition-colors"
+                  key={r.id}
+                  onClick={() => openConfirmOrDone(r)}
+                  className="w-full text-left bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-200 rounded-2xl p-4 transition-all"
                 >
-                  ถัดไป
-                </button>
-              </div>
-            </>
-          )}
-
-          {formStep === 3 && (
-            <>
-              <h2 className="font-bold text-slate-700">ข้อมูลความเสียหาย</h2>
-              <select name="damage_type" value={formData.damage_type} onChange={handleChange} className={inputClass}>
-                {DAMAGE_TYPE_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-              <select name="home_status" value={formData.home_status} onChange={handleChange} className={inputClass}>
-                {HOME_STATUS_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-              <input
-                name="damage_value"
-                type="number"
-                min={0}
-                value={formData.damage_value}
-                placeholder="ประเมินมูลค่าความเสียหาย (บาท)"
-                onChange={handleChange}
-                className={inputClass}
-              />
-              <textarea
-                name="description"
-                value={formData.description}
-                placeholder="รายละเอียดความเสียหายเพิ่มเติม"
-                onChange={handleChange}
-                className={`${inputClass} h-20`}
-              />
-
-              <div>
-                <label className="block text-xs font-bold text-slate-600 mb-2">
-                  📷 แนบรูปความเสียหาย (สูงสุด {MAX_IMAGES} รูป)
-                </label>
-                <div className="flex flex-wrap gap-2 mb-2">
-                  {imagePreviews.map((src, i) => (
-                    <div key={i} className="relative w-20 h-20">
-                      <img src={src} alt={`รูปความเสียหาย ${i + 1}`} className="w-20 h-20 object-cover rounded-xl border border-slate-200" />
-                      <button
-                        type="button"
-                        onClick={() => removeImage(i)}
-                        aria-label="ลบรูปนี้"
-                        className="absolute -top-2 -right-2 w-6 h-6 bg-rose-500 text-white rounded-full text-xs font-bold flex items-center justify-center shadow-sm"
-                      >
-                        ✕
-                      </button>
+                  <div className="flex justify-between items-start gap-2">
+                    <div>
+                      <div className="text-sm font-bold text-slate-800">
+                        {DAMAGE_TYPE_LABEL[r.damage_type ?? ''] ?? 'ยังไม่ระบุประเภทความเสียหาย'}
+                      </div>
+                      <div className="text-xs text-slate-400 mt-1">
+                        แจ้งเมื่อ {new Date(r.created_at).toLocaleDateString('th-TH')}
+                      </div>
                     </div>
-                  ))}
-                  {images.length < MAX_IMAGES && (
-                    <label className="w-20 h-20 flex items-center justify-center rounded-xl border-2 border-dashed border-slate-300 text-slate-400 text-2xl cursor-pointer hover:border-emerald-400 hover:text-emerald-500 transition-colors">
-                      +
-                      <input type="file" accept="image/*" multiple onChange={handleImageSelect} className="hidden" />
-                    </label>
+                    <span className="text-[10px] font-bold px-2 py-1 rounded-full" style={{ color: st.color, background: st.bg }}>
+                      {st.text}
+                    </span>
+                  </div>
+                  {r.victim_confirmed && (
+                    <div className="text-[11px] font-bold text-emerald-600 mt-2">✅ ยืนยันตัวตนแล้ว</div>
                   )}
-                </div>
-                {uploadProgress && <p className="text-xs text-emerald-600 font-semibold">{uploadProgress}</p>}
-              </div>
-
-              <div className="flex gap-2 pt-1">
-                <button onClick={() => setFormStep(2)} className="flex-1 bg-slate-200 py-4 rounded-2xl font-bold text-slate-600">ย้อนกลับ</button>
-                <button
-                  onClick={handleSubmit}
-                  disabled={loading}
-                  className="flex-1 bg-gradient-to-r from-emerald-600 to-emerald-500 text-white py-4 rounded-2xl font-bold hover:opacity-90 disabled:opacity-60 transition-all"
-                >
-                  {loading ? 'กำลังส่ง...' : 'ยืนยันยื่นคำร้อง'}
                 </button>
-              </div>
-            </>
-          )}
-        </div>
+              );
+            })}
+            <button type="button" onClick={goToCreate} className="w-full text-xs font-bold text-blue-600 pt-1">
+              📝 ไม่ใช่เคสของฉัน — แจ้งความเสียหายใหม่
+            </button>
+            <button type="button" onClick={() => setStep('lookup')} className="w-full text-xs font-bold text-slate-400">
+              ← ค้นหาใหม่
+            </button>
+          </div>
+        )}
+
+        {/* STEP 3a: ฟอร์มยืนยันตัวตนของเคสที่มีอยู่แล้ว */}
+        {step === 'confirm' && selected && (
+          <form onSubmit={handleConfirm} className="space-y-4 text-left">
+            <div className="bg-amber-50 border border-amber-100 rounded-2xl p-3 text-xs text-amber-700 font-bold leading-relaxed">
+              ⚠️ ต้องกรอกและยืนยันให้ครบก่อน จึงจะเข้าสู่กระบวนการยื่นเยียวยาได้
+            </div>
+            <IdentityFields
+              idCardNumber={idCardNumber} setIdCardNumber={setIdCardNumber}
+              idCardExistingUrl={selected.id_card_image_url}
+              setIdCardFile={setIdCardFile}
+              incidentDate={incidentDate} setIncidentDate={setIncidentDate}
+              damageType={damageType} setDamageType={setDamageType}
+              damageValue={damageValue} setDamageValue={setDamageValue}
+              description={description} setDescription={setDescription}
+              setDamagePhotos={setDamagePhotos}
+              existingPhotoCount={selected.image_urls?.length ?? 0}
+              homeStatus={homeStatus} setHomeStatus={setHomeStatus}
+            />
+            <button
+              type="submit" disabled={saving}
+              className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold p-4 rounded-2xl text-sm shadow-[0_6px_16px_rgba(37,99,235,0.2)] active:scale-[0.98] transition-all disabled:opacity-50"
+            >
+              {saving ? '⏳ กำลังบันทึก...' : '✅ ยืนยันตัวตนและส่งข้อมูล'}
+            </button>
+            <button type="button" onClick={() => setStep(reports.length > 1 ? 'select' : 'lookup')} className="w-full text-xs font-bold text-slate-400">
+              ← ย้อนกลับ
+            </button>
+          </form>
+        )}
+
+        {/* STEP 3b: ฟอร์มแจ้งความเสียหายใหม่ทั้งหมด + ยืนยันตัวตนในขั้นตอนเดียว */}
+        {step === 'create' && (
+          <form onSubmit={handleCreate} className="space-y-4 text-left">
+            <div className="bg-blue-50 border border-blue-100 rounded-2xl p-3 text-xs text-blue-700 font-bold leading-relaxed">
+              📝 ยังไม่พบข้อมูลการแจ้งความเสียหายของคุณ กรอกแบบฟอร์มนี้เพื่อแจ้งใหม่ พร้อมยืนยันตัวตนในขั้นตอนเดียวกันเลย
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-500 pl-1">ชื่อ-นามสกุล</label>
+              <input
+                type="text" required value={newFullName} onChange={e => setNewFullName(e.target.value)}
+                className="w-full p-4 rounded-2xl bg-slate-50 border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-500 pl-1">เบอร์โทร</label>
+              <input
+                type="tel" required value={newPhone} onChange={e => setNewPhone(e.target.value)}
+                className="w-full p-4 rounded-2xl bg-slate-50 border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-2">
+              <input
+                type="text" required placeholder="จังหวัด" value={newProvince} onChange={e => setNewProvince(e.target.value)}
+                className="w-full p-4 rounded-2xl bg-slate-50 border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <input
+                type="text" required placeholder="อำเภอ/เขต" value={newDistrict} onChange={e => setNewDistrict(e.target.value)}
+                className="w-full p-4 rounded-2xl bg-slate-50 border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <input
+                type="text" required placeholder="ตำบล/แขวง" value={newSubDistrict} onChange={e => setNewSubDistrict(e.target.value)}
+                className="w-full p-4 rounded-2xl bg-slate-50 border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-500 pl-1">ที่อยู่เพิ่มเติม (บ้านเลขที่ / ถนน) — ไม่บังคับ</label>
+              <textarea
+                rows={2} value={newAddressDetails} onChange={e => setNewAddressDetails(e.target.value)}
+                className="w-full p-4 rounded-2xl bg-slate-50 border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              />
+            </div>
+
+            <IdentityFields
+              idCardNumber={idCardNumber} setIdCardNumber={setIdCardNumber}
+              idCardExistingUrl={null}
+              setIdCardFile={setIdCardFile}
+              incidentDate={incidentDate} setIncidentDate={setIncidentDate}
+              damageType={damageType} setDamageType={setDamageType}
+              damageValue={damageValue} setDamageValue={setDamageValue}
+              description={description} setDescription={setDescription}
+              setDamagePhotos={setDamagePhotos}
+              existingPhotoCount={0}
+              homeStatus={homeStatus} setHomeStatus={setHomeStatus}
+            />
+
+            <button
+              type="submit" disabled={saving}
+              className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold p-4 rounded-2xl text-sm shadow-[0_6px_16px_rgba(37,99,235,0.2)] active:scale-[0.98] transition-all disabled:opacity-50"
+            >
+              {saving ? '⏳ กำลังบันทึก...' : '✅ แจ้งความเสียหายและยืนยันตัวตน'}
+            </button>
+            <button type="button" onClick={() => setStep('lookup')} className="w-full text-xs font-bold text-slate-400">
+              ← ย้อนกลับ
+            </button>
+          </form>
+        )}
+
+        {/* STEP 4: เสร็จสิ้น */}
+        {step === 'done' && selected && (
+          <div className="text-center space-y-4">
+            <div className="text-4xl">✅</div>
+            <div className="text-base font-bold text-slate-800">ยืนยันตัวตนเรียบร้อยแล้ว</div>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              ข้อมูลของคุณถูกส่งเข้าสู่กระบวนการพิจารณาเยียวยาแล้ว เจ้าหน้าที่จะตรวจสอบและติดต่อกลับตามเบอร์โทรที่แจ้งไว้
+            </p>
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-left text-xs text-slate-600 space-y-1">
+              <div>ประเภทความเสียหาย: {DAMAGE_TYPE_LABEL[selected.damage_type ?? ''] ?? '-'}</div>
+              <div>สถานะคำขอ: <span className="font-bold">{STATUS_LABEL[selected.status].text}</span></div>
+            </div>
+            <button onClick={resetAll} className="text-xs font-bold text-blue-600">
+              ← กลับไปหน้าค้นหา
+            </button>
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+// ── ฟิลด์ยืนยันตัวตน + รายละเอียดความเสียหาย ใช้ร่วมกันทั้งเคส "ยืนยันของเดิม" และ "แจ้งใหม่" ──
+function IdentityFields({
+  idCardNumber, setIdCardNumber, idCardExistingUrl, setIdCardFile,
+  incidentDate, setIncidentDate, damageType, setDamageType,
+  damageValue, setDamageValue, description, setDescription,
+  setDamagePhotos, existingPhotoCount, homeStatus, setHomeStatus,
+}: {
+  idCardNumber: string; setIdCardNumber: (v: string) => void;
+  idCardExistingUrl?: string | null; setIdCardFile: (f: File | null) => void;
+  incidentDate: string; setIncidentDate: (v: string) => void;
+  damageType: string; setDamageType: (v: string) => void;
+  damageValue: string; setDamageValue: (v: string) => void;
+  description: string; setDescription: (v: string) => void;
+  setDamagePhotos: (files: File[]) => void; existingPhotoCount: number;
+  homeStatus: string; setHomeStatus: (v: string) => void;
+}) {
+  return (
+    <>
+      <div className="space-y-1.5">
+        <label className="text-xs font-bold text-slate-500 pl-1">เลขบัตรประชาชน (13 หลัก)</label>
+        <input
+          type="text" inputMode="numeric" maxLength={13} required
+          value={idCardNumber} onChange={e => setIdCardNumber(e.target.value.replace(/\D/g, ''))}
+          className="w-full p-4 rounded-2xl bg-slate-50 border border-slate-200 text-sm tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="text-xs font-bold text-slate-500 pl-1">
+          รูปบัตรประชาชน {idCardExistingUrl && '(มีอยู่แล้ว — อัปโหลดใหม่เพื่อแทนที่)'}
+        </label>
+        <input
+          type="file" accept="image/*" capture="environment"
+          onChange={e => setIdCardFile(e.target.files?.[0] ?? null)}
+          className="w-full text-xs file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:bg-blue-50 file:text-blue-600 file:font-bold"
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="text-xs font-bold text-slate-500 pl-1">วันที่เกิดความเสียหาย</label>
+        <input
+          type="date" required value={incidentDate}
+          max={new Date().toISOString().slice(0, 10)}
+          onChange={e => setIncidentDate(e.target.value)}
+          className="w-full p-4 rounded-2xl bg-slate-50 border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="text-xs font-bold text-slate-500 pl-1">ประเภทความเสียหาย</label>
+        <div className="grid grid-cols-2 gap-2">
+          {Object.entries(DAMAGE_TYPE_LABEL).map(([key, label]) => (
+            <button
+              key={key} type="button"
+              onClick={() => setDamageType(key)}
+              className={`p-3 rounded-xl text-xs font-bold border transition-all ${
+                damageType === key ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 bg-slate-50 text-slate-600'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="text-xs font-bold text-slate-500 pl-1">มูลค่าความเสียหายโดยประมาณ (บาท) — ไม่บังคับ</label>
+        <input
+          type="number" min={0} value={damageValue} onChange={e => setDamageValue(e.target.value)}
+          placeholder="เช่น 15000"
+          className="w-full p-4 rounded-2xl bg-slate-50 border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="text-xs font-bold text-slate-500 pl-1">รายละเอียดความเสียหาย</label>
+        <textarea
+          rows={3} value={description} onChange={e => setDescription(e.target.value)}
+          placeholder="อธิบายความเสียหายที่เกิดขึ้น เช่น ผนังบ้านทรุด ของใช้ในบ้านเสียหาย ฯลฯ"
+          className="w-full p-4 rounded-2xl bg-slate-50 border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="text-xs font-bold text-slate-500 pl-1">รูปภาพความเสียหาย (เลือกได้หลายรูป)</label>
+        <input
+          type="file" accept="image/*" multiple capture="environment"
+          onChange={e => setDamagePhotos(Array.from(e.target.files ?? []))}
+          className="w-full text-xs file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:bg-blue-50 file:text-blue-600 file:font-bold"
+        />
+        {existingPhotoCount > 0 && (
+          <p className="text-[11px] text-slate-400">มีรูปแนบอยู่แล้ว {existingPhotoCount} รูป</p>
+        )}
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="text-xs font-bold text-slate-500 pl-1">ตอนนี้กลับเข้าบ้านได้หรือยัง?</label>
+        <div className="grid grid-cols-1 gap-2">
+          {Object.entries(HOME_STATUS_LABEL).map(([key, label]) => (
+            <button
+              key={key} type="button"
+              onClick={() => setHomeStatus(key)}
+              className={`p-3 rounded-xl text-xs font-bold border text-left transition-all ${
+                homeStatus === key ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 bg-slate-50 text-slate-600'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </>
   );
 }

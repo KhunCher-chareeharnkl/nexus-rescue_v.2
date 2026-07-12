@@ -31,6 +31,29 @@ interface Profile {
   phone?: string;
   role: string;
   agency?: string;
+  shelter_id?: string | null;
+}
+
+interface Shelter {
+  id: string;
+  name: string;
+  address?: string;
+  province?: string;
+}
+
+// สถานะ modal "ยืนยันผลการช่วยเหลือ" ที่กำลังเปิดอยู่ (เก็บข้อมูลเคสไว้ตั้งต้นค่า default)
+interface OutcomeDraft {
+  reportId: string;
+  fullName: string;
+  mode: 'rescued' | 'cannot_reach' | null;
+  destinationType: 'shelter' | 'relative_home' | 'hotel' | 'other_safe' | null;
+  destinationShelterId: string;
+  destinationNote: string;
+  confirmedAdult: number;
+  confirmedChild: number;
+  confirmedElder: number;
+  cannotReachReason: 'no_access' | 'deceased' | null;
+  notes: string;
 }
 
 const calcDistance = (lat1: number, lng1: number, lat2: number, lng2: number) => {
@@ -106,6 +129,14 @@ export default function OfficerDashboard() {
   // เก็บขั้นตอนปัจจุบันของแต่ละงานจากตาราง assignments (accepted / en_route / on_scene)
   // ใช้แสดงผลว่าเจ้าหน้าที่กดปุ่ม "กำลังเดินทาง" / "ถึงที่เกิดเหตุ" ไปแล้วจริง
   const [jobStage, setJobStage] = useState<Record<string, string>>({});
+  // รายชื่อศูนย์พักพิงทั้งหมด ไว้ให้เลือกตอนยืนยันผลว่าไปส่งศูนย์ไหน
+  const [shelters, setShelters] = useState<Shelter[]>([]);
+  // ข้อมูล modal "ยืนยันผลการช่วยเหลือ" ที่กำลังเปิดอยู่ (null = ปิดอยู่)
+  const [outcomeDraft, setOutcomeDraft] = useState<OutcomeDraft | null>(null);
+  const [outcomeSaving, setOutcomeSaving] = useState(false);
+  // ข้อความแจ้งปัญหาสิทธิ์การเข้าใช้งาน (role/ศูนย์ยังไม่ถูกตั้งค่า) — โชว์ตรงๆ แทนการเด้งกลับ login แบบเงียบๆ
+  // เพราะเคยทำให้ผู้ใช้เข้าใจผิดว่า session หลุด ทั้งที่จริงยัง login ค้างอยู่
+  const [accessError, setAccessError] = useState<string | null>(null);
 
   useEffect(() => {
     const init = async () => {
@@ -115,15 +146,37 @@ export default function OfficerDashboard() {
       const { data: prof, error: profErr } = await supabase
         .from('profiles').select('*').eq('id', user.id).single();
 
+      let resolvedProfile: Profile | null = null;
+
       if (profErr || !prof) {
         const { data: created } = await supabase
           .from('profiles')
           .insert({ id: user.id, full_name: user.email ?? 'เจ้าหน้าที่', role: 'rescuer' })
           .select().single();
-        setProfile(created);
+        resolvedProfile = created;
       } else {
-        setProfile(prof);
+        resolvedProfile = prof;
       }
+
+      // หน้านี้เป็นของเจ้าหน้าที่กู้ภัย (rescuer) เท่านั้น
+      // ถ้า role เป็นอย่างอื่น ให้เด้งไปหน้าที่ถูกต้องแทน กันเข้าหน้าผิดบทบาท
+      if (resolvedProfile?.role === 'shelter_staff') {
+        const shelterId = resolvedProfile.shelter_id;
+        if (!shelterId) {
+          // login ค้างอยู่ปกติ แค่ยังไม่ได้ผูกศูนย์พักพิงในระบบ — แจ้งตรงๆ ไม่เด้งกลับ login
+          setAccessError('บัญชีนี้ถูกตั้งเป็น "เจ้าหน้าที่ศูนย์พักพิง" แล้ว แต่ยังไม่ได้ผูกกับศูนย์ไหนเลย กรุณาติดต่อแอดมินให้ตั้งค่า shelter_id ในระบบก่อนใช้งาน');
+          setLoading(false);
+          return;
+        }
+        router.push(`/officer/shelter/${shelterId}`);
+        return;
+      }
+      if (resolvedProfile?.role === 'admin') {
+        router.push('/officer/admin');
+        return;
+      }
+
+      setProfile(resolvedProfile);
 
       navigator.geolocation?.getCurrentPosition(
         ({ coords }) => setMyCoords({ lat: coords.latitude, lng: coords.longitude }),
@@ -157,8 +210,16 @@ export default function OfficerDashboard() {
       }
     };
 
+    const fetchShelters = async () => {
+      const { data } = await supabase
+        .from('shelters').select('id, name, address, province')
+        .eq('is_active', true).order('name');
+      setShelters((data as Shelter[]) ?? []);
+    };
+
     fetchReports();
     fetchJobStages();
+    fetchShelters();
 
     const channel = supabase.channel('sos_realtime')
       .on('postgres_changes' as any,
@@ -270,9 +331,12 @@ export default function OfficerDashboard() {
       if (notes) updateData.notes = notes;
       if (newAssignStatus === 'completed') updateData.completed_at = new Date().toISOString();
 
+      // กรองเฉพาะแถว assignment ที่ยัง active อยู่ กันไปทับสถานะของแถวประวัติเก่าที่ปิดเคสไปแล้ว
+      // (เคยเกิดเคสที่กด "ลองเข้าใหม่" แล้วมี assignment มากกว่า 1 แถวต่อ report+rescuer เดิม)
       const { error: assignErr } = await supabase
         .from('assignments').update(updateData)
-        .eq('sos_report_id', reportId).eq('rescuer_id', profile.id);
+        .eq('sos_report_id', reportId).eq('rescuer_id', profile.id)
+        .in('status', ['accepted', 'en_route', 'on_scene']);
       if (assignErr) throw assignErr;
 
       const victimMap: Record<string, string> = {
@@ -307,6 +371,71 @@ export default function OfficerDashboard() {
     }
   };
 
+  // เปิด modal ยืนยันผลการช่วยเหลือ — ตั้งค่าเริ่มต้นจากเคสที่เลือก
+  const openOutcomeModal = (report: SOSReport) => {
+    setOutcomeDraft({
+      reportId: report.id,
+      fullName: report.full_name,
+      mode: null,
+      destinationType: null,
+      destinationShelterId: '',
+      destinationNote: '',
+      confirmedAdult: report.adult_count ?? 0,
+      confirmedChild: report.child_count ?? 0,
+      confirmedElder: report.elder_count ?? 0,
+      cannotReachReason: null,
+      notes: '',
+    });
+  };
+
+  // บันทึกผลการช่วยเหลือจริงลง DB ทีละตาราง (ตาม pattern เดิมของหน้านี้ ไม่ใช้ DB trigger)
+  const confirmOutcome = async () => {
+    if (!outcomeDraft || !profile) return;
+    const d = outcomeDraft;
+
+    if (d.mode === 'rescued' && !d.destinationType) {
+      alert('กรุณาเลือกว่านำส่งไปที่ไหน'); return;
+    }
+    if (d.mode === 'rescued' && d.destinationType === 'shelter' && !d.destinationShelterId) {
+      alert('กรุณาเลือกศูนย์พักพิงที่นำส่ง'); return;
+    }
+    if (d.mode === 'cannot_reach' && !d.cannotReachReason) {
+      alert('กรุณาเลือกเหตุผลที่เข้าไม่ถึง'); return;
+    }
+
+    setOutcomeSaving(true);
+    try {
+      // เรียก Postgres function เดียว (atomic transaction) แทนการยิง 4 ครั้งแยกกัน
+      // กันปัญหาข้อมูลค้างครึ่งๆ กลางๆ เวลาเน็ต/ขั้นตอนใดขั้นตอนหนึ่งสะดุดกลางทาง
+      // ดู migration-06-confirm-rescue-outcome.sql
+      const { error: rpcErr } = await supabase.rpc('confirm_rescue_outcome', {
+        p_sos_report_id: d.reportId,
+        p_mode: d.mode,
+        p_destination_type: d.mode === 'rescued' ? d.destinationType : null,
+        p_destination_shelter_id: d.mode === 'rescued' && d.destinationType === 'shelter' ? d.destinationShelterId : null,
+        p_destination_note: d.mode === 'rescued' && d.destinationType !== 'shelter' ? d.destinationNote : null,
+        p_confirmed_adult: d.mode === 'rescued' ? d.confirmedAdult : 0,
+        p_confirmed_child: d.mode === 'rescued' ? d.confirmedChild : 0,
+        p_confirmed_elder: d.mode === 'rescued' ? d.confirmedElder : 0,
+        p_cannot_reach_reason: d.mode === 'cannot_reach' ? d.cannotReachReason : null,
+        p_notes: d.notes || null,
+      });
+      if (rpcErr) throw rpcErr;
+
+      // อัปเดต UI local state ให้ตรงกับ DB ทันที
+      const newSOSStatus = d.mode === 'rescued' ? 'rescued' : 'cannot_reach';
+      setReports(prev => prev.map(r => r.id === d.reportId ? { ...r, status: newSOSStatus as SOSReport['status'] } : r));
+      setJobStage(prev => { const next = { ...prev }; delete next[d.reportId]; return next; });
+      if (navigatingId === d.reportId) setNavigatingId(null);
+      setOutcomeDraft(null);
+
+    } catch (err: any) {
+      alert(`บันทึกผลไม่สำเร็จ: ${err.message}`);
+    } finally {
+      setOutcomeSaving(false);
+    }
+  };
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push('/');
@@ -323,6 +452,22 @@ export default function OfficerDashboard() {
     });
 
   const districts = [...new Set(reports.map(r => r.district).filter(Boolean))];
+
+  if (accessError) return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Sarabun',sans-serif", padding: 20 }}>
+      <div style={{ maxWidth: 380, textAlign: 'center', background: '#fff', borderRadius: 20, padding: 28, border: '1px solid #ECEEF5' }}>
+        <div style={{ fontSize: 32, marginBottom: 10 }}>⚠️</div>
+        <div style={{ fontSize: 15, fontWeight: 700, color: '#111827', marginBottom: 8 }}>ยังเข้าใช้งานไม่ได้</div>
+        <div style={{ fontSize: 13, color: '#6B7280', lineHeight: 1.6, marginBottom: 20 }}>{accessError}</div>
+        <button
+          onClick={async () => { await supabase.auth.signOut(); router.push('/officer/login'); }}
+          style={{ padding: '11px 20px', borderRadius: 12, border: '1px solid #ECEEF5', background: '#fff', color: '#6B7280', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+        >
+          ออกจากระบบ
+        </button>
+      </div>
+    </div>
+  );
 
   if (loading) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Sarabun',sans-serif", color: '#6B7280' }}>
@@ -624,19 +769,16 @@ export default function OfficerDashboard() {
                             {stage === 'on_scene' ? '✓ ' : ''}📍 ถึงที่เกิดเหตุ
                           </button>
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                          <button onClick={() => updateAssignment(item.id, 'rescued', 'completed')} disabled={isLoading}
-                            style={{ padding: '10px', borderRadius: 10, border: 'none', background: '#D1FAE5', color: '#065F46', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                            ✅ ช่วยสำเร็จ
-                          </button>
-                          <button onClick={() => {
-                            const reason = window.prompt('ระบุเหตุผลที่เข้าไม่ถึง:');
-                            if (reason) updateAssignment(item.id, 'cannot_reach', 'cannot_reach', reason);
-                          }} disabled={isLoading}
-                            style={{ padding: '10px', borderRadius: 10, border: 'none', background: '#EDE9FE', color: '#5B21B6', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                            ❌ เข้าไม่ถึง
-                          </button>
-                        </div>
+                        {/* เปิด modal ยืนยันผลการช่วยเหลือละเอียด แทนการกดจบงานตรงๆ
+                            เพื่อบังคับให้ระบุปลายทาง (ศูนย์พักพิง/อื่นๆ) หรือเหตุผลที่เข้าไม่ถึง */}
+                        <button onClick={() => openOutcomeModal(item)} disabled={isLoading}
+                          style={{
+                            width: '100%', padding: '12px', borderRadius: 10, border: 'none',
+                            background: '#111827', color: '#fff',
+                            fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                          }}>
+                          📋 ยืนยันผลการช่วยเหลือ
+                        </button>
                       </div>
                     )}
 
@@ -660,6 +802,166 @@ export default function OfficerDashboard() {
           )}
         </main>
       </div>
+
+      {/* ── Modal: ยืนยันผลการช่วยเหลือ ───────────────────────────── */}
+      {outcomeDraft && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(17,24,39,0.55)',
+          display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 100,
+        }}>
+          <div style={{
+            background: '#fff', borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 480,
+            maxHeight: '90vh', overflowY: 'auto', padding: 20, fontFamily: "'Sarabun',sans-serif",
+          }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#111827', marginBottom: 2 }}>
+              ยืนยันผลการช่วยเหลือ
+            </div>
+            <div style={{ fontSize: 13, color: '#6B7280', marginBottom: 16 }}>
+              {outcomeDraft.fullName}
+            </div>
+
+            {/* Step 1: ช่วยได้ไหม */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+              <button
+                onClick={() => setOutcomeDraft({ ...outcomeDraft, mode: 'rescued' })}
+                style={{
+                  padding: '12px', borderRadius: 12, border: outcomeDraft.mode === 'rescued' ? '2px solid #22C55E' : '1px solid #E5E7EB',
+                  background: outcomeDraft.mode === 'rescued' ? '#D1FAE5' : '#fff',
+                  color: '#065F46', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                }}>
+                ✅ ช่วยเหลือได้
+              </button>
+              <button
+                onClick={() => setOutcomeDraft({ ...outcomeDraft, mode: 'cannot_reach' })}
+                style={{
+                  padding: '12px', borderRadius: 12, border: outcomeDraft.mode === 'cannot_reach' ? '2px solid #7C3AED' : '1px solid #E5E7EB',
+                  background: outcomeDraft.mode === 'cannot_reach' ? '#EDE9FE' : '#fff',
+                  color: '#5B21B6', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                }}>
+                ❌ ช่วยเหลือไม่ได้
+              </button>
+            </div>
+
+            {/* Step 2a: ช่วยได้ -> เลือกปลายทาง */}
+            {outcomeDraft.mode === 'rescued' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#374151' }}>นำส่งไปที่ไหน?</div>
+                <select
+                  value={outcomeDraft.destinationType ?? ''}
+                  onChange={e => setOutcomeDraft({ ...outcomeDraft, destinationType: e.target.value as any })}
+                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #E5E7EB', fontSize: 14, fontFamily: 'inherit' }}
+                >
+                  <option value="">— เลือก —</option>
+                  <option value="shelter">🏠 ศูนย์พักพิง</option>
+                  <option value="relative_home">👨‍👩‍👧 บ้านญาติ</option>
+                  <option value="hotel">🏨 โรงแรม</option>
+                  <option value="other_safe">📍 ปลอดภัย แต่ไม่ได้อยู่ศูนย์ (อื่นๆ)</option>
+                </select>
+
+                {outcomeDraft.destinationType === 'shelter' && (
+                  <>
+                    <select
+                      value={outcomeDraft.destinationShelterId}
+                      onChange={e => setOutcomeDraft({ ...outcomeDraft, destinationShelterId: e.target.value })}
+                      style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #E5E7EB', fontSize: 14, fontFamily: 'inherit' }}
+                    >
+                      <option value="">— เลือกศูนย์พักพิง —</option>
+                      {shelters.map(s => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#374151', marginTop: 4 }}>
+                      ยืนยันจำนวนที่นำส่งจริง
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                      {(['confirmedAdult', 'confirmedChild', 'confirmedElder'] as const).map((key, i) => (
+                        <div key={key}>
+                          <div style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 4 }}>
+                            {['ผู้ใหญ่', 'เด็ก', 'สูงอายุ'][i]}
+                          </div>
+                          <input
+                            type="number" min={0}
+                            value={outcomeDraft[key]}
+                            onChange={e => setOutcomeDraft({ ...outcomeDraft, [key]: Number(e.target.value) })}
+                            style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #E5E7EB', fontSize: 14, fontFamily: 'inherit' }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {outcomeDraft.destinationType && outcomeDraft.destinationType !== 'shelter' && (
+                  <textarea
+                    placeholder="ระบุรายละเอียด เช่น ชื่อ-ที่อยู่บ้านญาติ / ชื่อโรงแรม"
+                    value={outcomeDraft.destinationNote}
+                    onChange={e => setOutcomeDraft({ ...outcomeDraft, destinationNote: e.target.value })}
+                    rows={2}
+                    style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #E5E7EB', fontSize: 14, fontFamily: 'inherit', resize: 'vertical' }}
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Step 2b: ช่วยไม่ได้ -> เลือกเหตุผล */}
+            {outcomeDraft.mode === 'cannot_reach' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#374151' }}>เหตุผลที่เข้าไม่ถึง</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <button
+                    onClick={() => setOutcomeDraft({ ...outcomeDraft, cannotReachReason: 'no_access' })}
+                    style={{
+                      padding: '10px', borderRadius: 10, fontFamily: 'inherit', cursor: 'pointer',
+                      border: outcomeDraft.cannotReachReason === 'no_access' ? '2px solid #F59E0B' : '1px solid #E5E7EB',
+                      background: outcomeDraft.cannotReachReason === 'no_access' ? '#FEF3C7' : '#fff',
+                      color: '#92400E', fontSize: 13, fontWeight: 700,
+                    }}>
+                    🌊 เข้าไม่ถึง (รอเข้าใหม่)
+                  </button>
+                  <button
+                    onClick={() => setOutcomeDraft({ ...outcomeDraft, cannotReachReason: 'deceased' })}
+                    style={{
+                      padding: '10px', borderRadius: 10, fontFamily: 'inherit', cursor: 'pointer',
+                      border: outcomeDraft.cannotReachReason === 'deceased' ? '2px solid #6B7280' : '1px solid #E5E7EB',
+                      background: outcomeDraft.cannotReachReason === 'deceased' ? '#F3F4F6' : '#fff',
+                      color: '#374151', fontSize: 13, fontWeight: 700,
+                    }}>
+                    🕯️ เสียชีวิต
+                  </button>
+                </div>
+                <textarea
+                  placeholder="รายละเอียดเพิ่มเติม (ถ้ามี)"
+                  value={outcomeDraft.notes}
+                  onChange={e => setOutcomeDraft({ ...outcomeDraft, notes: e.target.value })}
+                  rows={2}
+                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #E5E7EB', fontSize: 14, fontFamily: 'inherit', resize: 'vertical' }}
+                />
+              </div>
+            )}
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 4 }}>
+              <button
+                onClick={() => setOutcomeDraft(null)}
+                disabled={outcomeSaving}
+                style={{ padding: '13px', borderRadius: 12, border: '1px solid #E5E7EB', background: '#fff', color: '#6B7280', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                ยกเลิก
+              </button>
+              <button
+                onClick={confirmOutcome}
+                disabled={outcomeSaving || !outcomeDraft.mode}
+                style={{
+                  padding: '13px', borderRadius: 12, border: 'none',
+                  background: !outcomeDraft.mode ? '#E5E7EB' : '#111827',
+                  color: '#fff', fontSize: 14, fontWeight: 700,
+                  cursor: outcomeSaving || !outcomeDraft.mode ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+                }}>
+                {outcomeSaving ? 'กำลังบันทึก...' : 'ยืนยัน'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
