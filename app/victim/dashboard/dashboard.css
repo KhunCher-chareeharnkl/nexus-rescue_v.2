@@ -52,11 +52,73 @@
 .status-empty { padding:55px 20px; text-align:center; border:1px solid var(--line); border-radius:22px; background:#fff; }.status-empty > span { width:50px; height:50px; display:grid; place-items:center; margin:auto; border-radius:16px; color:var(--blue); background:#EAF3FC; }.status-empty h2 { margin:12px 0 4px; font-size:13px; }.status-empty p { margin:0 0 14px; color:var(--muted); font-size:9px; }.status-empty button { padding:9px 13px; border:0; border-radius:10px; color:#fff; background:var(--blue); font:inherit; font-size:9px; font-weight:700; cursor:pointer; }
 .status-skeleton { min-height:250px; display:grid; gap:13px; padding:23px; border:1px solid var(--line); border-radius:22px; background:#fff; }.status-skeleton > * { position:relative; display:block; overflow:hidden; border-radius:999px; background:#E2E7EE; }.status-skeleton > *::after { content:''; position:absolute; inset:0; transform:translateX(-100%); background:linear-gradient(90deg,transparent,rgba(255,255,255,.8),transparent); animation:victim-shimmer 1.3s infinite; }.status-skeleton div { width:62%; height:25px; }.status-skeleton span { height:14px; }.status-skeleton span:nth-child(2) { width:85%; }.status-skeleton span:nth-child(3) { width:72%; }.status-skeleton span:nth-child(4) { width:90%; margin-top:35px; }
 
+/* Public mobile-first typography: readable without zooming. */
+.victim-home-button { min-height:44px; font-size:14px; }
+.victim-dashboard-brand strong { font-size:16px; }
+.victim-dashboard-brand small,.victim-dashboard-live { font-size:12px; }
+.victim-dashboard-eyebrow { font-size:12px; }
+.victim-dashboard-intro h1 { font-size:clamp(32px,5vw,42px); }
+.victim-dashboard-intro p { font-size:15px; line-height:1.65; }
+.victim-workspace-tabs button { min-height:58px; }
+.victim-workspace-tabs strong { font-size:14px; }
+.victim-workspace-tabs small { font-size:12px; }
+.sos-step { font-size:12px; }
+.sos-panel-heading h2 { font-size:20px; }
+.sos-panel-heading p { font-size:14px; line-height:1.6; }
+.sos-panel-heading > span { font-size:13px; }
+.sos-field > span { font-size:14px; }
+.sos-field > span small,.sos-field-error { font-size:12px!important; }
+.sos-field input,.sos-field select,.sos-field textarea { min-height:50px; font-size:16px; }
+.sos-primary-button,.sos-secondary-button { min-height:50px; font-size:15px; }
+.sos-location-box strong { font-size:14px; }
+.sos-location-box small { font-size:12px; }
+.sos-location-box > button { min-height:40px; font-size:13px; }
+.sos-choice-grid strong { font-size:15px; }
+.sos-choice-grid small { font-size:12px; }
+.sos-people-list > div > span { font-size:14px; }
+.sos-people-list strong { font-size:16px; }
+.sos-people-list button { width:40px; height:40px; }
+.sos-chip-list button { min-height:42px; font-size:13px; }
+.sos-custom-item { min-height:50px; }
+.sos-custom-item input { font-size:15px; }
+.sos-custom-item button { min-height:38px; font-size:13px; }
+.sos-custom-chips > span { font-size:13px; }
+.sos-submit-note strong { font-size:14px; }
+.sos-submit-note small { font-size:12px; line-height:1.5; }
+.status-search-copy strong { font-size:15px; }
+.status-search-copy small { font-size:13px; }
+.status-search-control { min-height:54px; }
+.status-search-control input { font-size:16px; }
+.status-search-control button { height:44px; font-size:14px; }
+.status-search-hint,.status-error { font-size:13px; }
+.status-live-label { font-size:12px; }
+.status-overview h2 { font-size:clamp(25px,4vw,32px); }
+.status-overview p { font-size:14px; line-height:1.65; }
+.status-badge { font-size:13px; }
+.status-section-heading span { font-size:11px; }
+.status-section-heading h3 { font-size:18px; }
+.status-section-heading > small { font-size:12px; }
+.status-timeline-item { min-height:102px; }
+.status-timeline-item strong { font-size:15px; }
+.status-timeline-item p { margin-top:5px; font-size:13px; line-height:1.6; }
+.status-timeline-item.current small { font-size:12px; }
+.status-person strong { font-size:15px; }
+.status-person small { font-size:13px; }
+.status-details dt { font-size:12px; }
+.status-details dd { font-size:14px; line-height:1.6; }
+.status-refresh { min-height:46px; font-size:14px; }
+.status-welcome > div:last-child > span { font-size:12px; }
+.status-welcome h2 { font-size:25px; }
+.status-welcome p { font-size:14px; line-height:1.65; }
+.status-empty h2 { font-size:19px; }
+.status-empty p { font-size:14px; line-height:1.6; }
+.status-empty button { min-height:44px; font-size:14px; }
+
 @media(max-width:720px) {
   .victim-dashboard-header { grid-template-columns:1fr auto; padding:0 14px; }.victim-dashboard-brand { display:none; }.victim-dashboard-live { grid-column:2; }.victim-dashboard-main { padding:23px 13px 0; }.status-content-grid { grid-template-columns:1fr; }.status-overview { grid-template-columns:1fr 180px; padding:22px; }.status-welcome { grid-template-columns:180px 1fr; padding:22px; }
 }
 @media(max-width:520px) {
-  .victim-home-button span,.victim-dashboard-live { display:none; }.victim-dashboard-header { min-height:64px; }.victim-dashboard-intro h1 { font-size:27px; }.victim-workspace-tabs { margin-top:18px; }.victim-workspace-tabs button > span { display:none; }.sos-panel { padding:18px; border-radius:20px; }.sos-field-grid.two { grid-template-columns:1fr; }.sos-choice-grid.five { grid-template-columns:repeat(5,1fr); gap:4px; }.sos-choice-grid.three { grid-template-columns:1fr; }.sos-button-row { grid-template-columns:1fr; }.sos-button-row .sos-secondary-button { order:2; }.sos-location-box { grid-template-columns:35px 1fr; }.sos-location-box > button { grid-column:1/-1; }.status-overview { grid-template-columns:1fr; padding:22px; text-align:center; }.status-live-label { justify-content:center; }.status-overview p { margin-left:auto; margin-right:auto; }.status-overview .waiting-rescuer { height:125px; }.status-welcome { grid-template-columns:1fr; padding:20px; text-align:center; }.status-welcome .waiting-rescuer { height:125px; }.status-welcome p { margin:auto; }.status-search-control button span { display:none; }.status-search-control button { width:39px; padding:0; }.status-section-heading { display:block; }.status-section-heading > small { display:block; margin-top:4px; }.sos-stepper { margin-left:5px; margin-right:5px; }
+  .victim-home-button span,.victim-dashboard-live { display:none; }.victim-dashboard-header { min-height:64px; }.victim-dashboard-intro h1 { font-size:34px; }.victim-workspace-tabs { margin-top:18px; }.victim-workspace-tabs button > span { display:none; }.sos-panel { padding:18px; border-radius:20px; }.sos-field-grid.two { grid-template-columns:1fr; }.sos-choice-grid.five { grid-template-columns:repeat(5,1fr); gap:4px; }.sos-choice-grid.three { grid-template-columns:1fr; }.sos-button-row { grid-template-columns:1fr; }.sos-button-row .sos-secondary-button { order:2; }.sos-location-box { grid-template-columns:35px 1fr; }.sos-location-box > button { grid-column:1/-1; }.status-overview { grid-template-columns:1fr; padding:22px; text-align:center; }.status-live-label { justify-content:center; }.status-overview p { margin-left:auto; margin-right:auto; }.status-overview .waiting-rescuer { height:125px; }.status-welcome { grid-template-columns:1fr; padding:20px; text-align:center; }.status-welcome .waiting-rescuer { height:125px; }.status-welcome p { margin:auto; }.status-search-control button span { display:none; }.status-search-control button { width:44px; padding:0; }.status-section-heading { display:block; }.status-section-heading > small { display:block; margin-top:4px; }.sos-stepper { margin-left:5px; margin-right:5px; }
 }
 @media(prefers-reduced-motion:reduce) {
   .victim-workspace,.victim-dashboard-intro,.status-result,.rescuer-character,.rescuer-arm,.victim-dashboard-live i,.status-live-label i,.status-skeleton > *::after { animation:none; }

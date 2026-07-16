@@ -386,6 +386,23 @@ const HOME_STYLES = `
   .home-bottom-nav button:hover,.home-bottom-nav button.active { color:#fff; background:rgba(255,255,255,.09); }
   .home-nav-icon { width:34px; height:30px; display:grid; place-items:center; border-radius:11px; transition:.2s ease; }
   .home-bottom-nav button.active .home-nav-icon { color:#fff; background:var(--blue); box-shadow:0 6px 14px rgba(4,102,200,.3); }
+  /* Readable public-facing type scale */
+  .home-brand-name { font-size:18px; }
+  .home-brand-subtitle { font-size:13px; }
+  .home-eyebrow { font-size:13px; }
+  .home-heading-wrap p { font-size:16px; line-height:1.65; }
+  .home-role-eyebrow { font-size:12px; }
+  .home-role-copy strong { font-size:18px; }
+  .home-role-copy small { margin-top:4px; font-size:14px; line-height:1.5; }
+  .home-quick strong { font-size:16px; }
+  .home-quick small { margin-top:3px; font-size:13px; }
+  .home-map-eyebrow { font-size:12px; }
+  .home-map-head h2 { font-size:20px; }
+  .home-online { font-size:12px; }
+  .home-map-loading { font-size:14px; }
+  .home-map-foot { font-size:12px; }
+  .home-map-foot button { min-height:40px; font-size:13px; }
+  .home-bottom-nav button { min-height:62px; font-size:12px; }
   @media(max-width:900px) {
     .home-main { grid-template-columns:1fr; max-width:620px; margin-top:12px; }
     .home-header { max-width:620px; }
@@ -397,13 +414,13 @@ const HOME_STYLES = `
     .home-brand-mark { width:40px; height:40px; border-radius:13px; }
     .home-main { gap:18px; margin-top:14px; }
     .home-heading-wrap { margin-bottom:18px; }
-    .home-heading-wrap h1 { margin-top:9px; font-size:34px; }
-    .home-heading-wrap p { font-size:11px; }
+    .home-heading-wrap h1 { margin-top:9px; font-size:38px; }
+    .home-heading-wrap p { font-size:16px; }
     .home-role { grid-template-columns:44px minmax(0,1fr) 32px; gap:11px; min-height:88px; padding:14px; border-radius:19px; }
     .home-role-icon { width:44px; height:44px; border-radius:14px; }
     .home-role-arrow { width:31px; height:31px; }
-    .home-role-copy strong { font-size:13px; }
-    .home-role-copy small { font-size:9px; }
+    .home-role-copy strong { font-size:17px; }
+    .home-role-copy small { font-size:14px; }
     .home-quick-grid { grid-template-columns:1fr 1fr; }
     .home-quick { grid-template-columns:1fr; align-content:center; justify-items:center; gap:8px; min-height:114px; text-align:center; }
     .home-map-card { padding:13px; border-radius:23px; }

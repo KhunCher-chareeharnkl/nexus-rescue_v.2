@@ -299,7 +299,7 @@ export default function VictimCompensationConfirm() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-800 flex flex-col items-center justify-center p-4">
+    <div className="victim-compensation min-h-screen bg-slate-100 text-slate-800 flex flex-col items-center justify-center p-4">
       <div className="max-w-md w-full bg-white p-8 rounded-[2.5rem] shadow-[0_10px_30px_rgba(0,0,0,0.03)] border border-slate-200/80 space-y-6">
 
         <div className="text-center">
