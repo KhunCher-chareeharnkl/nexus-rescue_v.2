@@ -1,7 +1,19 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import {
+  ArrowLeft,
+  Building2,
+  ChevronRight,
+  Home,
+  MapPin,
+  Navigation,
+  Phone,
+  Search,
+  Users,
+  X,
+} from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 type Shelter = {
@@ -17,19 +29,20 @@ type Shelter = {
   is_active: boolean;
 };
 
-function occStatus(cap: number, occ: number): 'ok' | 'warn' | 'full' {
-  if (cap <= 0) return 'warn';
-  const pct = occ / cap;
-  if (pct >= 1) return 'full';
-  if (pct >= 0.85) return 'warn';
-  return 'ok';
-}
+type OccupancyStatus = 'available' | 'limited' | 'full';
 
-const STATUS_STYLE: Record<string, { badge: string; bar: string; label: string }> = {
-  ok: { badge: 'bg-emerald-100 text-emerald-700', bar: 'bg-emerald-500', label: 'ยังรับได้' },
-  warn: { badge: 'bg-amber-100 text-amber-700', bar: 'bg-amber-500', label: 'ใกล้เต็ม' },
-  full: { badge: 'bg-rose-100 text-rose-700', bar: 'bg-rose-500', label: 'เต็มแล้ว' },
+const STATUS_META: Record<OccupancyStatus, { label: string; className: string }> = {
+  available: { label: 'พร้อมรองรับ', className: 'available' },
+  limited: { label: 'ใกล้เต็ม', className: 'limited' },
+  full: { label: 'เต็มแล้ว', className: 'full' },
 };
+
+function getOccupancyStatus(capacity: number, occupancy: number): OccupancyStatus {
+  if (capacity <= 0 || occupancy / capacity >= 0.85) {
+    return capacity > 0 && occupancy >= capacity ? 'full' : 'limited';
+  }
+  return 'available';
+}
 
 export default function ShelterListPage() {
   const router = useRouter();
@@ -45,15 +58,17 @@ export default function ShelterListPage() {
     async function loadShelters() {
       setLoading(true);
       setError(null);
-      const { data, error } = await supabase
+
+      const { data, error: loadError } = await supabase
         .from('shelters')
         .select('*')
         .eq('is_active', true)
         .order('name', { ascending: true });
 
       if (!active) return;
-      if (error) {
-        setError('โหลดข้อมูลศูนย์พักพิงไม่สำเร็จ ลองใหม่อีกครั้ง');
+
+      if (loadError) {
+        setError('โหลดข้อมูลศูนย์พักพิงไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
         setShelters([]);
       } else {
         setShelters((data ?? []) as Shelter[]);
@@ -68,177 +83,254 @@ export default function ShelterListPage() {
   }, []);
 
   const provinces = useMemo(
-    () => [...new Set(shelters.map((s) => s.province).filter(Boolean) as string[])].sort(),
-    [shelters]
+    () => [...new Set(shelters.map((shelter) => shelter.province).filter(Boolean) as string[])].sort(),
+    [shelters],
   );
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return shelters.filter((s) => {
-      const hay = `${s.name} ${s.address ?? ''} ${s.province ?? ''}`.toLowerCase();
-      if (q && !hay.includes(q)) return false;
-      if (province && s.province !== province) return false;
+    const query = search.trim().toLowerCase();
+
+    return shelters.filter((shelter) => {
+      const searchableText = `${shelter.name} ${shelter.address ?? ''} ${shelter.province ?? ''}`.toLowerCase();
+      if (query && !searchableText.includes(query)) return false;
+      if (province && shelter.province !== province) return false;
       return true;
     });
   }, [shelters, search, province]);
 
+  const hasFilters = search.trim().length > 0 || province.length > 0;
+
+  const clearFilters = () => {
+    setSearch('');
+    setProvince('');
+  };
+
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-800 pb-10">
-      {/* Header */}
-      <header className="p-6 bg-gradient-to-br from-blue-600 to-blue-500 text-white rounded-b-[2.5rem] shadow-[0_8px_20px_-6px_rgba(37,99,235,0.5)]">
-        <div className="max-w-4xl mx-auto">
-          <div className="flex items-center gap-3 mb-4">
-            <button
-              onClick={() => router.back()}
-              aria-label="ย้อนกลับ"
-              className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center active:scale-95 transition-transform"
-            >
-              ←
+    <>
+      <style>{SHELTER_STYLES}</style>
+      <div className="shelter-page">
+        <header className="shelter-nav">
+          <div className="shelter-nav-inner">
+            <button className="shelter-back" onClick={() => router.back()} aria-label="ย้อนกลับ">
+              <ArrowLeft size={18} strokeWidth={2} />
             </button>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider opacity-80">
-                Nexus Rescue
-              </p>
-              <h1 className="text-xl font-bold tracking-tight">รายชื่อศูนย์พักพิง</h1>
+            <div className="shelter-brand">
+              <span className="shelter-brand-mark"><Home size={17} strokeWidth={2.2} /></span>
+              <span>
+                <strong>Nexus Rescue</strong>
+                <small>ศูนย์พักพิงและจุดช่วยเหลือ</small>
+              </span>
             </div>
+            <button className="shelter-home" onClick={() => router.push('/')}>
+              หน้าหลัก <ChevronRight size={14} />
+            </button>
+          </div>
+        </header>
+
+        <main className="shelter-main">
+          <section className="shelter-hero">
+            <div className="shelter-hero-copy">
+              <span className="shelter-eyebrow">SHELTER DIRECTORY</span>
+              <h1>ค้นหาศูนย์พักพิง<br />ที่เหมาะกับคุณ</h1>
+              <p>ตรวจสอบที่ตั้ง จำนวนผู้พักพิง และช่องทางติดต่อของศูนย์ที่เปิดให้บริการ</p>
+            </div>
+            <div className="shelter-hero-stat" aria-label={`ศูนย์พักพิงทั้งหมด ${shelters.length} แห่ง`}>
+              <Building2 size={20} strokeWidth={2} />
+              <strong>{loading ? '—' : shelters.length}</strong>
+              <span>ศูนย์ที่เปิดให้บริการ</span>
+            </div>
+          </section>
+
+          <section className="shelter-filter" aria-label="ค้นหาและกรองศูนย์พักพิง">
+            <label className="shelter-search">
+              <Search size={17} strokeWidth={2} aria-hidden="true" />
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                type="search"
+                placeholder="ค้นหาชื่อศูนย์ อำเภอ หรือตำบล"
+              />
+              {search && (
+                <button type="button" onClick={() => setSearch('')} aria-label="ล้างคำค้นหา">
+                  <X size={15} />
+                </button>
+              )}
+            </label>
+            <label className="shelter-province">
+              <MapPin size={16} strokeWidth={2} aria-hidden="true" />
+              <select value={province} onChange={(event) => setProvince(event.target.value)}>
+                <option value="">ทุกจังหวัด</option>
+                {provinces.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+            </label>
+          </section>
+
+          <div className="shelter-results-head">
+            <div>
+              <span className="shelter-results-dot" aria-hidden="true" />
+              {loading ? 'กำลังค้นหาศูนย์พักพิง...' : `พบ ${filtered.length} จาก ${shelters.length} ศูนย์`}
+            </div>
+            {hasFilters && <button onClick={clearFilters}>ล้างตัวกรอง</button>}
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-2">
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              type="text"
-              placeholder="ค้นหาชื่อศูนย์ / อำเภอ / ตำบล"
-              className="flex-1 text-sm px-4 py-2.5 rounded-xl bg-white/15 placeholder-blue-100 text-white focus:outline-none focus:ring-2 focus:ring-white/70"
-            />
-            <select
-              value={province}
-              onChange={(e) => setProvince(e.target.value)}
-              className="text-sm px-4 py-2.5 rounded-xl bg-white/15 text-white focus:outline-none focus:ring-2 focus:ring-white/70 sm:w-40"
-            >
-              <option className="text-slate-800" value="">
-                ทุกจังหวัด
-              </option>
-              {provinces.map((p) => (
-                <option className="text-slate-800" key={p} value={p}>
-                  {p}
-                </option>
+          {error && <div className="shelter-error" role="alert">{error}</div>}
+
+          {loading && <ShelterSkeleton />}
+
+          {!loading && !error && filtered.length === 0 && (
+            <div className="shelter-empty">
+              <span><Building2 size={26} strokeWidth={1.8} /></span>
+              <h2>ไม่พบศูนย์พักพิงที่ตรงกับเงื่อนไข</h2>
+              <p>ลองเปลี่ยนคำค้นหา เลือกจังหวัดอื่น หรือล้างตัวกรองทั้งหมด</p>
+              <button onClick={clearFilters}>ล้างตัวกรอง</button>
+            </div>
+          )}
+
+          {!loading && filtered.length > 0 && (
+            <div className="shelter-list">
+              {filtered.map((shelter, index) => (
+                <ShelterItem key={shelter.id} shelter={shelter} index={index} />
               ))}
-            </select>
+            </div>
+          )}
+        </main>
+      </div>
+    </>
+  );
+}
+
+function ShelterItem({ shelter, index }: { shelter: Shelter; index: number }) {
+  const capacity = shelter.capacity ?? 0;
+  const occupancy = shelter.current_occupancy ?? 0;
+  const percentage = capacity > 0 ? Math.min((occupancy / capacity) * 100, 100) : 0;
+  const available = Math.max(capacity - occupancy, 0);
+  const status = getOccupancyStatus(capacity, occupancy);
+  const statusMeta = STATUS_META[status];
+  const hasCoordinates = shelter.lat != null && shelter.lng != null;
+  const mapUrl = hasCoordinates
+    ? `https://www.google.com/maps/dir/?api=1&destination=${shelter.lat},${shelter.lng}`
+    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+        `${shelter.name} ${shelter.address ?? ''} ${shelter.province ?? ''}`,
+      )}`;
+  const hasPhone = Boolean(shelter.contact_phone?.trim());
+  const phoneHref = hasPhone ? `tel:${shelter.contact_phone!.replace(/[^0-9+]/g, '')}` : undefined;
+
+  return (
+    <article className="shelter-item" style={{ animationDelay: `${Math.min(index, 7) * 35}ms` }}>
+      <div className="shelter-item-accent" aria-hidden="true" />
+      <div className="shelter-item-main">
+        <div className="shelter-item-top">
+          <span className="shelter-item-icon"><Building2 size={20} strokeWidth={2} /></span>
+          <div className="shelter-item-copy">
+            <div className="shelter-item-title-row">
+              <h2>{shelter.name}</h2>
+              <span className={`shelter-status ${statusMeta.className}`}><i />{statusMeta.label}</span>
+            </div>
+            <p><MapPin size={13} /> {shelter.address || 'ไม่ระบุที่อยู่'}{shelter.province ? ` · ${shelter.province}` : ''}</p>
           </div>
         </div>
-      </header>
 
-      {/* Content */}
-      <main className="max-w-4xl mx-auto p-4 mt-4 space-y-4">
-        <div className="flex items-center justify-between px-1 text-xs text-slate-500">
-          <span>
-            {loading ? 'กำลังโหลดข้อมูล...' : `พบ ${filtered.length} ศูนย์ จากทั้งหมด ${shelters.length} ศูนย์`}
-          </span>
+        <div className="shelter-capacity">
+          <div className="shelter-capacity-head">
+            <span><Users size={14} /> ผู้พักพิงปัจจุบัน</span>
+            <strong>{occupancy.toLocaleString('th-TH')} <small>/ {capacity.toLocaleString('th-TH')} คน</small></strong>
+          </div>
+          <div className="shelter-progress" aria-label={`ใช้งาน ${Math.round(percentage)} เปอร์เซ็นต์`}>
+            <span className={statusMeta.className} style={{ width: `${percentage}%` }} />
+          </div>
+          <span className="shelter-remaining">{capacity > 0 ? `เหลือรองรับประมาณ ${available.toLocaleString('th-TH')} คน` : 'กรุณาติดต่อศูนย์เพื่อตรวจสอบความจุ'}</span>
         </div>
+      </div>
 
-        {error && (
-          <div className="bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-2xl p-4">
-            {error}
-          </div>
-        )}
+      <div className="shelter-actions">
+        <a className="shelter-directions" href={mapUrl} target="_blank" rel="noopener noreferrer">
+          <Navigation size={16} strokeWidth={2.1} />
+          <span><strong>นำทาง</strong><small>เปิด Google Maps</small></span>
+        </a>
+        <a
+          className={`shelter-call ${hasPhone ? '' : 'disabled'}`}
+          href={phoneHref}
+          aria-disabled={!hasPhone}
+          onClick={(event) => { if (!hasPhone) event.preventDefault(); }}
+        >
+          <Phone size={16} strokeWidth={2.1} />
+          <span><strong>{hasPhone ? 'โทรติดต่อ' : 'ไม่มีเบอร์'}</strong><small>{hasPhone ? shelter.contact_phone : 'ติดต่อผ่านแผนที่'}</small></span>
+        </a>
+      </div>
+    </article>
+  );
+}
 
-        {loading && (
-          <div className="space-y-3">
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="h-28 rounded-[1.75rem] bg-slate-50 border border-white/60 animate-pulse" />
-            ))}
-          </div>
-        )}
-
-        {!loading && !error && filtered.length === 0 && (
-          <div className="text-center py-16 text-slate-400">
-            <p className="text-3xl mb-2">🏚️</p>
-            <p className="font-semibold text-slate-600">ไม่พบศูนย์พักพิงที่ตรงกับเงื่อนไข</p>
-            <p className="text-sm">ลองล้างตัวกรองหรือค้นหาด้วยคำอื่น</p>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {!loading &&
-            filtered.map((s) => {
-              const cap = s.capacity ?? 0;
-              const occ = s.current_occupancy ?? 0;
-              const pct = cap > 0 ? Math.min(occ / cap, 1) : 0;
-              const status = occStatus(cap, occ);
-              const style = STATUS_STYLE[status];
-
-              const hasCoords = s.lat != null && s.lng != null;
-              const mapUrl = hasCoords
-                ? `https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lng}`
-                : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-                    `${s.name} ${s.address ?? ''} ${s.province ?? ''}`
-                  )}`;
-              const hasPhone = !!s.contact_phone && s.contact_phone.trim().length > 0;
-              const telHref = hasPhone ? `tel:${s.contact_phone!.replace(/[^0-9+]/g, '')}` : undefined;
-
-              return (
-                <div
-                  key={s.id}
-                  className="bg-slate-50 p-5 rounded-[1.75rem] shadow-[0_4px_12px_rgba(0,0,0,0.03)] border border-white/60 flex flex-col gap-3"
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="w-11 h-11 rounded-xl bg-blue-100 flex items-center justify-center text-xl shrink-0">
-                      🏠
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-bold text-slate-800 leading-snug truncate">{s.name}</h3>
-                      <p className="text-xs text-slate-500 leading-snug">
-                        {s.address}
-                        {s.province ? ` · ${s.province}` : ''}
-                      </p>
-                    </div>
-                    <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full whitespace-nowrap ${style.badge}`}>
-                      {style.label}
-                    </span>
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between text-xs text-slate-500 mb-1">
-                      <span>ผู้พักพิงปัจจุบัน</span>
-                      <span className="font-semibold text-slate-700">
-                        {occ} / {cap} คน
-                      </span>
-                    </div>
-                    <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full ${style.bar}`}
-                        style={{ width: `${pct * 100}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2 pt-1">
-                    <a
-                      href={mapUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2.5 rounded-xl flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform"
-                    >
-                      🧭 นำทาง
-                    </a>
-                    <a
-                      href={telHref}
-                      aria-disabled={!hasPhone}
-                      className={`flex-1 text-sm font-bold py-2.5 rounded-xl flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform ${
-                        hasPhone
-                          ? 'bg-rose-500 hover:bg-rose-600 text-white'
-                          : 'bg-slate-200 text-slate-400 pointer-events-none'
-                      }`}
-                    >
-                      📞 {hasPhone ? 'โทร' : 'ไม่มีเบอร์'}
-                    </a>
-                  </div>
-                </div>
-              );
-            })}
+function ShelterSkeleton() {
+  return (
+    <div className="shelter-list" role="status" aria-label="กำลังโหลดศูนย์พักพิง">
+      <span className="shelter-sr-only">กำลังโหลดข้อมูล</span>
+      {[0, 1, 2, 3].map((item) => (
+        <div className="shelter-skeleton" key={item} aria-hidden="true">
+          <span className="skeleton-square" />
+          <div><span className="skeleton-line wide" /><span className="skeleton-line medium" /><span className="skeleton-line full" /></div>
+          <div className="skeleton-buttons"><span /><span /></div>
         </div>
-      </main>
+      ))}
     </div>
   );
 }
+
+const SHELTER_STYLES = `
+  @keyframes shelter-enter { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes shelter-shimmer { to { transform:translateX(100%); } }
+  .shelter-page {
+    --blue:#0466C8; --blue-strong:#0353A4; --blue-deep:#023E7D; --navy:#002855;
+    --ink:#001845; --midnight:#001233; --slate:#33415C; --muted:#7D8597; --pale:#979DAC;
+    --line:#DDE3EC; min-height:100vh; color:var(--ink);
+    background:linear-gradient(145deg,#F9FBFE,#F2F6FB 55%,#EAF1F9);
+    font-family:var(--font-thai),'IBM Plex Sans Thai',sans-serif;
+  }
+  .shelter-nav { position:sticky; z-index:30; top:0; border-top:4px solid var(--blue); border-bottom:1px solid rgba(51,65,92,.1); background:rgba(255,255,255,.9); backdrop-filter:blur(16px); }
+  .shelter-nav-inner { width:min(100%,1040px); min-height:70px; display:grid; grid-template-columns:40px 1fr auto; align-items:center; gap:12px; margin:auto; padding:0 22px; }
+  .shelter-back { width:38px; height:38px; display:grid; place-items:center; border:1px solid var(--line); border-radius:13px; color:var(--slate); background:#fff; cursor:pointer; transition:.2s; }
+  .shelter-back:hover { color:var(--blue); border-color:#B8CCE1; transform:translateX(-2px); }
+  .shelter-brand { display:flex; align-items:center; gap:10px; }
+  .shelter-brand-mark { width:36px; height:36px; display:grid; place-items:center; border-radius:12px; color:#fff; background:linear-gradient(135deg,var(--blue),var(--blue-deep)); }
+  .shelter-brand strong,.shelter-brand small { display:block; }.shelter-brand strong { font-size:13px; }.shelter-brand small { margin-top:1px; color:var(--muted); font-size:9px; }
+  .shelter-home { display:flex; align-items:center; gap:3px; padding:8px 10px; border:0; color:var(--blue-strong); background:transparent; font-family:inherit; font-size:10px; font-weight:700; cursor:pointer; }
+  .shelter-main { width:min(100%,1040px); margin:auto; padding:26px 22px 50px; }
+  .shelter-hero { position:relative; min-height:190px; display:grid; grid-template-columns:1fr auto; align-items:end; gap:28px; overflow:hidden; padding:30px 32px; border-radius:27px; color:#fff; background:linear-gradient(135deg,var(--navy),var(--blue-deep)); box-shadow:0 18px 42px rgba(0,24,69,.16); }
+  .shelter-hero::after { content:''; position:absolute; width:230px; height:230px; right:-90px; top:-145px; border:30px solid rgba(151,157,172,.15); border-radius:50%; }
+  .shelter-hero-copy { position:relative; z-index:1; }.shelter-eyebrow { color:#A9CDEC; font-size:9px; font-weight:750; letter-spacing:.13em; }
+  .shelter-hero h1 { margin:10px 0 7px; font-size:clamp(25px,4vw,36px); font-weight:750; line-height:1.12; letter-spacing:-.04em; }
+  .shelter-hero p { max-width:560px; margin:0; color:rgba(255,255,255,.62); font-size:11px; }
+  .shelter-hero-stat { position:relative; z-index:1; min-width:150px; display:grid; grid-template-columns:auto 1fr; align-items:center; gap:3px 9px; padding:17px; border:1px solid rgba(255,255,255,.14); border-radius:18px; background:rgba(255,255,255,.08); backdrop-filter:blur(5px); }
+  .shelter-hero-stat svg { grid-row:1/3; color:#A9CDEC; }.shelter-hero-stat strong { font-size:26px; line-height:1; }.shelter-hero-stat span { color:rgba(255,255,255,.58); font-size:9px; }
+  .shelter-filter { position:relative; z-index:2; display:grid; grid-template-columns:1fr 190px; gap:9px; margin:-20px 22px 0; padding:11px; border:1px solid rgba(51,65,92,.1); border-radius:18px; background:rgba(255,255,255,.94); box-shadow:0 12px 30px rgba(0,24,69,.09); backdrop-filter:blur(12px); }
+  .shelter-search,.shelter-province { min-height:44px; display:flex; align-items:center; gap:9px; padding:0 13px; border:1px solid var(--line); border-radius:12px; color:var(--muted); background:#F8FAFD; transition:.2s; }
+  .shelter-search:focus-within,.shelter-province:focus-within { border-color:#8DB5DC; box-shadow:0 0 0 3px rgba(4,102,200,.08); background:#fff; }
+  .shelter-search input,.shelter-province select { min-width:0; flex:1; border:0; outline:0; color:var(--ink); background:transparent; font:inherit; font-size:11px; }
+  .shelter-search input::placeholder { color:var(--pale); }.shelter-search button { width:25px; height:25px; display:grid; place-items:center; border:0; border-radius:8px; color:var(--muted); background:#E8EDF4; cursor:pointer; }
+  .shelter-results-head { display:flex; justify-content:space-between; align-items:center; margin:25px 4px 12px; color:var(--muted); font-size:10px; }
+  .shelter-results-head > div { display:flex; align-items:center; gap:7px; }.shelter-results-dot { width:6px; height:6px; border-radius:50%; background:var(--blue); }
+  .shelter-results-head button { border:0; color:var(--blue); background:transparent; font:inherit; font-weight:700; cursor:pointer; }
+  .shelter-list { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .shelter-item { position:relative; min-width:0; overflow:hidden; display:grid; grid-template-rows:1fr auto; border:1px solid rgba(51,65,92,.11); border-radius:20px; background:rgba(255,255,255,.9); box-shadow:0 8px 24px rgba(0,24,69,.045); animation:shelter-enter .35s ease both; transition:.22s; }
+  .shelter-item:hover { transform:translateY(-3px); border-color:#C0D1E3; box-shadow:0 15px 32px rgba(0,24,69,.08); }.shelter-item-accent { position:absolute; inset:0 auto 0 0; width:4px; background:linear-gradient(var(--blue),var(--blue-deep)); }
+  .shelter-item-main { padding:17px 17px 14px 20px; }.shelter-item-top { display:flex; align-items:flex-start; gap:11px; }
+  .shelter-item-icon { width:40px; height:40px; flex:0 0 40px; display:grid; place-items:center; border-radius:13px; color:var(--blue-strong); background:#EAF3FC; }
+  .shelter-item-copy { min-width:0; flex:1; }.shelter-item-title-row { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }.shelter-item h2 { min-width:0; margin:1px 0 0; overflow:hidden; color:var(--ink); font-size:13px; font-weight:750; line-height:1.35; text-overflow:ellipsis; white-space:nowrap; }
+  .shelter-item-copy p { display:flex; align-items:flex-start; gap:4px; margin:3px 0 0; color:var(--muted); font-size:9px; line-height:1.45; }.shelter-item-copy p svg { flex:0 0 auto; margin-top:1px; }
+  .shelter-status { flex:0 0 auto; display:flex; align-items:center; gap:5px; padding:4px 7px; border-radius:999px; font-size:8px; font-weight:750; }.shelter-status i { width:5px; height:5px; border-radius:50%; background:currentColor; }
+  .shelter-status.available { color:var(--blue-strong); background:#EAF3FC; }.shelter-status.limited { color:var(--slate); background:#EEF0F4; }.shelter-status.full { color:var(--midnight); background:#DDE2EA; }
+  .shelter-capacity { margin-top:16px; }.shelter-capacity-head { display:flex; align-items:end; justify-content:space-between; gap:10px; color:var(--muted); font-size:9px; }.shelter-capacity-head > span { display:flex; align-items:center; gap:5px; }.shelter-capacity-head strong { color:var(--ink); font-size:13px; }.shelter-capacity-head small { color:var(--muted); font-size:9px; font-weight:500; }
+  .shelter-progress { height:6px; overflow:hidden; margin-top:7px; border-radius:999px; background:#E7ECF3; }.shelter-progress span { display:block; height:100%; min-width:3px; border-radius:inherit; transition:width .5s ease; }.shelter-progress span.available { background:var(--blue); }.shelter-progress span.limited { background:var(--slate); }.shelter-progress span.full { background:var(--midnight); }
+  .shelter-remaining { display:block; margin-top:5px; color:var(--pale); font-size:8px; }
+  .shelter-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:11px 13px 13px 16px; border-top:1px solid #E9EDF3; background:#FBFCFE; }
+  .shelter-actions a { min-width:0; min-height:44px; display:flex; align-items:center; justify-content:center; gap:8px; padding:8px 10px; border-radius:12px; text-decoration:none; transition:.18s; }.shelter-actions a:hover { transform:translateY(-1px); }.shelter-actions strong,.shelter-actions small { display:block; }.shelter-actions strong { font-size:10px; }.shelter-actions small { margin-top:1px; overflow:hidden; font-size:7px; font-weight:450; opacity:.65; text-overflow:ellipsis; white-space:nowrap; }
+  .shelter-directions { border:1px solid var(--blue); color:#fff; background:var(--blue); box-shadow:0 6px 14px rgba(4,102,200,.14); }.shelter-directions:hover { background:var(--blue-strong); }
+  .shelter-call { border:1px solid #C6D3E1; color:var(--blue-deep); background:#fff; }.shelter-call:hover { border-color:#94B5D5; background:#F1F6FC; }.shelter-call.disabled { color:var(--pale); border-color:#E0E5EC; background:#F2F4F7; pointer-events:none; }
+  .shelter-error { margin-top:18px; padding:14px 16px; border-left:4px solid var(--blue-deep); border-radius:0 13px 13px 0; color:var(--blue-deep); background:#EAF3FC; font-size:11px; }
+  .shelter-empty { padding:60px 20px; text-align:center; color:var(--muted); }.shelter-empty > span { width:54px; height:54px; display:grid; place-items:center; margin:0 auto 12px; border-radius:18px; color:var(--blue); background:#EAF3FC; }.shelter-empty h2 { margin:0; color:var(--ink); font-size:15px; }.shelter-empty p { margin:5px 0 15px; font-size:10px; }.shelter-empty button { padding:9px 14px; border:1px solid #BFD0E2; border-radius:10px; color:var(--blue); background:#fff; font:inherit; font-size:10px; font-weight:700; cursor:pointer; }
+  .shelter-skeleton { min-height:208px; display:grid; grid-template-columns:40px 1fr; gap:12px; padding:17px; border:1px solid var(--line); border-radius:20px; background:#fff; }.shelter-skeleton span { position:relative; display:block; overflow:hidden; background:#E3E8EF; }.shelter-skeleton span::after { content:''; position:absolute; inset:0; transform:translateX(-100%); background:linear-gradient(90deg,transparent,rgba(255,255,255,.75),transparent); animation:shelter-shimmer 1.35s infinite; }.skeleton-square { width:40px; height:40px; border-radius:13px; }.skeleton-line { height:9px; margin-bottom:9px; border-radius:99px; }.skeleton-line.wide { width:72%; height:13px; }.skeleton-line.medium { width:55%; }.skeleton-line.full { width:100%; margin-top:35px; }.skeleton-buttons { grid-column:1/-1; display:grid; grid-template-columns:1fr 1fr; gap:8px; align-self:end; }.skeleton-buttons span { height:44px; border-radius:12px; }
+  .shelter-sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+  @media(max-width:720px) { .shelter-list { grid-template-columns:1fr; }.shelter-hero { min-height:180px; padding:25px; }.shelter-filter { margin-left:12px; margin-right:12px; }.shelter-main { padding-left:13px; padding-right:13px; }.shelter-nav-inner { padding:0 14px; } }
+  @media(max-width:520px) { .shelter-brand small,.shelter-home { display:none; }.shelter-filter { grid-template-columns:1fr; margin-top:-16px; }.shelter-hero { grid-template-columns:1fr; gap:18px; }.shelter-hero-stat { min-width:0; justify-self:start; }.shelter-actions { grid-template-columns:1fr 1fr; }.shelter-item-title-row { display:block; }.shelter-status { width:max-content; margin-top:6px; } }
+  @media(prefers-reduced-motion:reduce) { .shelter-item,.shelter-skeleton span::after { animation:none; }.shelter-item,.shelter-actions a,.shelter-back { transition:none; } }
+`;

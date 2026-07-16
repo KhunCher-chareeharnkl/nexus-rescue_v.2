@@ -172,7 +172,7 @@ export default function OfficerDashboard() {
         return;
       }
       if (resolvedProfile?.role === 'admin') {
-        router.push('/officer/admin');
+        router.replace('/officer/admin');
         return;
       }
 
@@ -454,7 +454,7 @@ export default function OfficerDashboard() {
   const districts = [...new Set(reports.map(r => r.district).filter(Boolean))];
 
   if (accessError) return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Sarabun',sans-serif", padding: 20 }}>
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "var(--font-thai), 'Noto Sans Thai', sans-serif", padding: 20 }}>
       <div style={{ maxWidth: 380, textAlign: 'center', background: '#fff', borderRadius: 20, padding: 28, border: '1px solid #ECEEF5' }}>
         <div style={{ fontSize: 32, marginBottom: 10 }}>⚠️</div>
         <div style={{ fontSize: 15, fontWeight: 700, color: '#111827', marginBottom: 8 }}>ยังเข้าใช้งานไม่ได้</div>
@@ -470,7 +470,7 @@ export default function OfficerDashboard() {
   );
 
   if (loading) return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Sarabun',sans-serif", color: '#6B7280' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "var(--font-thai), 'Noto Sans Thai', sans-serif", color: '#6B7280' }}>
       กำลังโหลด...
     </div>
   );
@@ -484,9 +484,35 @@ export default function OfficerDashboard() {
           0%,100% { box-shadow: 0 4px 20px rgba(239,68,68,0.4); }
           50% { box-shadow: 0 4px 32px rgba(239,68,68,0.7); }
         }
+        @keyframes rise-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes gentle-glow { 0%,100% { opacity: .4; transform: scale(.96); } 50% { opacity: .75; transform: scale(1.06); } }
+        .rescue-app { --navy:#264653; --teal:#2A9D8F; --saffron:#E9C46A; --sand:#F4A261; --coral:#E76F51; --surface:#FFFEFC; --muted:#6B7C84; min-height:100vh !important; background:#E0FBFC !important; color:var(--navy); font-family:var(--font-thai),"Noto Sans Thai",sans-serif !important; padding-left:84px; }
+        .rescue-app::before { content:""; position:fixed; width:420px; height:420px; border-radius:50%; background:rgba(42,157,143,.13); filter:blur(8px); right:-180px; top:56px; pointer-events:none; animation:gentle-glow 8s ease-in-out infinite; }
+        .rescue-rail { position:fixed; inset:0 auto 0 0; width:84px; z-index:80; background:#264653; display:flex; flex-direction:column; align-items:center; padding:18px 12px; box-shadow:12px 0 32px rgba(38,70,83,.12); }
+        .rail-brand { width:46px; height:46px; border-radius:16px; background:linear-gradient(135deg,#E9C46A,#F4A261); color:#264653; display:grid; place-items:center; font-size:20px; font-weight:900; box-shadow:0 8px 16px rgba(0,0,0,.16); }
+        .rail-menu { display:grid; gap:10px; margin-top:42px; }
+        .rail-button { border:0; width:48px; height:48px; border-radius:15px; color:rgba(255,255,255,.72); background:transparent; cursor:pointer; font:700 19px/1 inherit; transition:transform .2s ease,background .2s ease,color .2s ease; }
+        .rail-button:hover,.rail-button.active { background:#2A9D8F; color:#fff; transform:translateY(-2px); }.rail-button.exit{margin-top:auto;font-size:18px}
+        .rescue-app > header { background:rgba(255,254,252,.82) !important; backdrop-filter:blur(18px); border-bottom:1px solid rgba(38,70,83,.08) !important; padding:15px 28px !important; }.rescue-app > header > div{max-width:1440px !important}.rescue-app > header button{border-color:rgba(38,70,83,.12) !important;color:#264653 !important;border-radius:12px !important;transition:background .2s ease,transform .2s ease !important}.rescue-app > header button:hover{background:#fff7ed !important;transform:translateY(-1px)}
+        .rescue-app main { max-width:1440px !important; padding:28px !important; position:relative; z-index:1; }.legacy-summary{display:none !important}
+        .dashboard-overview { display:grid; grid-template-columns:minmax(0,1.55fr) minmax(300px,.75fr); gap:18px; margin-bottom:18px; animation:rise-in .45s ease both; }.operation-hero{min-height:206px;overflow:hidden;position:relative;border-radius:26px;padding:28px;color:#fff;background:linear-gradient(125deg,#264653,#31677a);box-shadow:0 18px 42px rgba(38,70,83,.18)}.operation-hero::after{content:"";position:absolute;width:230px;height:230px;right:-72px;bottom:-102px;border:32px solid rgba(233,196,106,.38);border-radius:50%}.operation-kicker{display:flex;gap:8px;align-items:center;color:#E9C46A;font-size:12px;font-weight:800;letter-spacing:.08em}.operation-kicker i{width:8px;height:8px;border-radius:50%;background:#E9C46A;box-shadow:0 0 0 5px rgba(233,196,106,.14)}.operation-hero h1{font-size:clamp(23px,3vw,32px);letter-spacing:-.035em;line-height:1.22;margin:18px 0 7px;position:relative;z-index:1}.operation-hero p{color:rgba(255,255,255,.76);font-size:14px;position:relative;z-index:1}.operation-summary{display:flex;position:relative;z-index:1;gap:18px;margin-top:24px}.operation-summary span{display:grid;gap:2px;font-size:12px;color:rgba(255,255,255,.65)}.operation-summary b{color:#fff;font-size:20px;line-height:1}
+        .metric-stack{display:grid;grid-template-columns:1fr 1fr;gap:12px}.metric-card{background:#FFFEFC;min-height:97px;padding:18px;border:1px solid rgba(38,70,83,.08);border-radius:22px;box-shadow:0 10px 24px rgba(38,70,83,.06);transition:transform .2s ease,box-shadow .2s ease}.metric-card:hover{transform:translateY(-3px);box-shadow:0 16px 28px rgba(38,70,83,.1)}.metric-card:nth-child(1){background:#fff8e7}.metric-card:nth-child(2){background:#ecf9f7}.metric-card:nth-child(3){background:#fff0ec}.metric-card:nth-child(4){background:#f5f8f9}.metric-label{font-size:12px;color:#6B7C84;font-weight:600}.metric-value{margin-top:6px;font-size:27px;line-height:1;font-weight:800;color:#264653}
+        .filter-bar{background:rgba(255,254,252,.9) !important;border:1px solid rgba(38,70,83,.08) !important;border-radius:22px !important;padding:12px !important;margin-bottom:18px !important;box-shadow:0 9px 22px rgba(38,70,83,.05)}.filter-label{margin:0 6px 0 4px;color:#264653;font-size:13px;font-weight:800}.filter-button{background:#edf4f4 !important;color:#6B7C84 !important;border:1px solid transparent !important;border-radius:12px !important;padding:8px 13px !important;transition:all .2s ease !important}.filter-button:hover{background:#d8efeb !important;color:#2A9D8F !important;transform:translateY(-1px)}.filter-button.selected{background:#2A9D8F !important;color:#fff !important;box-shadow:0 5px 12px rgba(42,157,143,.2)}.district-filter{border-color:rgba(38,70,83,.1) !important;background:#fff !important;color:#264653;border-radius:12px !important;padding:8px 11px !important}
+        .report-grid{gap:16px !important}.rescue-card{border:1px solid rgba(38,70,83,.09) !important;background:#FFFEFC !important;border-radius:22px !important;padding:18px !important;box-shadow:0 9px 24px rgba(38,70,83,.055) !important;transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease !important;animation:rise-in .45s ease both}.rescue-card:hover{transform:translateY(-4px);border-color:rgba(42,157,143,.36) !important;box-shadow:0 18px 32px rgba(38,70,83,.11) !important}.rescue-card > div:nth-child(3){background:#f3f8f8 !important;border-color:#e1eeee !important;border-radius:14px !important}.rescue-card button{transition:transform .18s ease,filter .18s ease,box-shadow .18s ease !important}.rescue-card button:hover:not(:disabled){transform:translateY(-1px);filter:saturate(1.06);box-shadow:0 6px 14px rgba(38,70,83,.12)}.rescue-card button:active:not(:disabled){transform:scale(.98)}.rescue-card button[style*="EF4444"]{background:#E76F51 !important}.rescue-card button[style*="1D4ED8"]{background:#2A9D8F !important}.outcome-backdrop{background:rgba(38,70,83,.54) !important;backdrop-filter:blur(5px)}.outcome-sheet{border:1px solid rgba(38,70,83,.08);box-shadow:0 -12px 42px rgba(38,70,83,.17)}
+        @media(max-width:760px){.rescue-app{padding-left:0;padding-bottom:72px}.rescue-rail{width:100%;height:64px;inset:auto 0 0;flex-direction:row;padding:8px 16px;justify-content:space-between}.rail-brand{width:38px;height:38px;border-radius:13px;font-size:16px}.rail-menu{margin:0;display:flex;gap:6px}.rail-button{width:40px;height:40px;font-size:17px;border-radius:13px}.rail-button.exit{margin:0}.rescue-app>header{padding:13px 16px !important}.rescue-app>header>div>div:last-child{gap:7px !important}.rescue-app>header button{padding:7px 9px !important;font-size:11px !important}.dashboard-overview{grid-template-columns:1fr}.operation-hero{min-height:192px;padding:22px}.rescue-app main{padding:17px 14px 24px !important}.filter-label{width:100%;margin:0 4px 2px}.district-filter{margin-left:0 !important;width:100%}}
       `}</style>
 
-      <div style={{ minHeight: '100vh', background: '#F0F2FA', fontFamily: "'Sarabun',sans-serif" }}>
+      <div className="rescue-app" style={{ minHeight: '100vh', background: '#F0F2FA', fontFamily: "var(--font-thai), 'Noto Sans Thai', sans-serif" }}>
+        <nav className="rescue-rail" aria-label="Operation navigation">
+          <div className="rail-brand" aria-hidden="true">N</div>
+          <div className="rail-menu">
+            <button className={`rail-button ${filterStatus === 'all' ? 'active' : ''}`} type="button" aria-label="Overview" onClick={() => setFilterStatus('all')}>⌂</button>
+            <button className={`rail-button ${filterStatus === 'pending' ? 'active' : ''}`} type="button" aria-label="Pending requests" onClick={() => setFilterStatus('pending')}>!</button>
+            <button className={`rail-button ${filterStatus === 'assigned' ? 'active' : ''}`} type="button" aria-label="Active missions" onClick={() => setFilterStatus('assigned')}>↗</button>
+            <button className={`rail-button ${filterStatus === 'rescued' ? 'active' : ''}`} type="button" aria-label="Completed missions" onClick={() => setFilterStatus('rescued')}>✓</button>
+          </div>
+          <button className="rail-button exit" type="button" aria-label="Sign out" onClick={handleLogout}>↪</button>
+        </nav>
 
         {/* Header */}
         <header style={{ background: '#fff', borderBottom: '1px solid #ECEEF5', padding: '14px 20px', position: 'sticky', top: 0, zIndex: 50 }}>
@@ -583,8 +609,33 @@ export default function OfficerDashboard() {
 
         <main style={{ maxWidth: 960, margin: '0 auto', padding: '20px 16px 40px' }}>
 
+          <section className="dashboard-overview" aria-label="Mission overview">
+            <div className="operation-hero">
+              <div className="operation-kicker"><i />NEXUS RESCUE · LIVE OPERATIONS</div>
+              <h1>พร้อมประสานงาน<br />เพื่อทุกชีวิตที่รอความช่วยเหลือ</h1>
+              <p>{new Intl.DateTimeFormat('th-TH', { dateStyle: 'full' }).format(new Date())}</p>
+              <div className="operation-summary">
+                <span><b>{reports.length}</b>เหตุการณ์ทั้งหมด</span>
+                <span><b>{reports.filter(r => r.status === 'pending' || r.status === 'assigned').length}</b>ภารกิจที่ต้องดูแล</span>
+              </div>
+            </div>
+            <div className="metric-stack">
+              {[
+                { label: 'รอรับเรื่อง', count: reports.filter(r => r.status === 'pending').length },
+                { label: 'กำลังช่วยเหลือ', count: reports.filter(r => r.status === 'assigned').length },
+                { label: 'ช่วยเหลือสำเร็จ', count: reports.filter(r => r.status === 'rescued').length },
+                { label: 'ผู้ประสบภัยทั้งหมด', count: reports.reduce((total, report) => total + (report.adult_count ?? 0) + (report.child_count ?? 0) + (report.elder_count ?? 0), 0) },
+              ].map(({ label, count }) => (
+                <div className="metric-card" key={label}>
+                  <div className="metric-label">{label}</div>
+                  <div className="metric-value">{count}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+
           {/* Summary */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginBottom: 20 }}>
+          <div className="legacy-summary" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginBottom: 20 }}>
             {[
               { label: 'รอรับเรื่อง', count: reports.filter(r => r.status === 'pending').length, color: '#EF4444' },
               { label: 'กำลังช่วย', count: reports.filter(r => r.status === 'assigned').length, color: '#F59E0B' },
@@ -599,9 +650,10 @@ export default function OfficerDashboard() {
           </div>
 
           {/* Filters */}
-          <div style={{ background: '#fff', borderRadius: 16, padding: '14px 16px', marginBottom: 16, border: '1px solid #ECEEF5', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <div className="filter-bar" style={{ background: '#fff', borderRadius: 16, padding: '14px 16px', marginBottom: 16, border: '1px solid #ECEEF5', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span className="filter-label">จัดลำดับภารกิจ</span>
             {['all', 'pending', 'assigned', 'rescued', 'cannot_reach'].map(s => (
-              <button key={s} onClick={() => setFilterStatus(s)}
+              <button className={`filter-button ${filterStatus === s ? 'selected' : ''}`} key={s} onClick={() => setFilterStatus(s)}
                 style={{
                   padding: '6px 14px', borderRadius: 10, border: 'none', cursor: 'pointer',
                   fontSize: 13, fontWeight: 600,
@@ -612,7 +664,7 @@ export default function OfficerDashboard() {
                 {s === 'all' ? 'ทั้งหมด' : STATUS_LABEL[s]}
               </button>
             ))}
-            <select value={filterDistrict} onChange={e => setFilterDistrict(e.target.value)}
+            <select className="district-filter" value={filterDistrict} onChange={e => setFilterDistrict(e.target.value)}
               style={{ marginLeft: 'auto', padding: '6px 12px', borderRadius: 10, border: '1px solid #ECEEF5', fontSize: 13, background: '#F9FAFB', cursor: 'pointer', fontFamily: 'inherit' }}>
               <option value="all">ทุกอำเภอ</option>
               {districts.map(d => <option key={d} value={d}>{d}</option>)}
@@ -625,7 +677,7 @@ export default function OfficerDashboard() {
               ไม่พบรายการที่ตรงกับเงื่อนไข
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 14 }}>
+            <div className="report-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 14 }}>
               {filtered.map(item => {
                 const dist = myCoords ? calcDistance(myCoords.lat, myCoords.lng, item.lat ?? 0, item.lng ?? 0) : null;
                 const isLoading = actionLoading === item.id;
@@ -635,7 +687,7 @@ export default function OfficerDashboard() {
                 const stage = jobStage[item.id];
 
                 return (
-                  <div key={item.id} style={{
+                  <div className="rescue-card" key={item.id} style={{
                     background: '#fff', borderRadius: 20, padding: 20,
                     border: `1.5px solid ${isMyJob ? '#EF4444' : item.status === 'pending' ? '#FECACA' : item.status === 'assigned' ? '#FDE68A' : '#ECEEF5'}`,
                     display: 'flex', flexDirection: 'column', gap: 12,
@@ -805,13 +857,13 @@ export default function OfficerDashboard() {
 
       {/* ── Modal: ยืนยันผลการช่วยเหลือ ───────────────────────────── */}
       {outcomeDraft && (
-        <div style={{
+        <div className="outcome-backdrop" style={{
           position: 'fixed', inset: 0, background: 'rgba(17,24,39,0.55)',
           display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 100,
         }}>
-          <div style={{
+          <div className="outcome-sheet" style={{
             background: '#fff', borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 480,
-            maxHeight: '90vh', overflowY: 'auto', padding: 20, fontFamily: "'Sarabun',sans-serif",
+            maxHeight: '90vh', overflowY: 'auto', padding: 20, fontFamily: "var(--font-thai), 'Noto Sans Thai', sans-serif",
           }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: '#111827', marginBottom: 2 }}>
               ยืนยันผลการช่วยเหลือ
