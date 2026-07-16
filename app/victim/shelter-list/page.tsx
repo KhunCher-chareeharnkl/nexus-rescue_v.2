@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { PROJECT_NAME } from '@/lib/brand';
 
 type Shelter = {
   id: string;
@@ -117,7 +118,7 @@ export default function ShelterListPage() {
             <div className="shelter-brand">
               <span className="shelter-brand-mark"><Home size={17} strokeWidth={2.2} /></span>
               <span>
-                <strong>Nexus Rescue</strong>
+                <strong>{PROJECT_NAME}</strong>
                 <small>ศูนย์พักพิงและจุดช่วยเหลือ</small>
               </span>
             </div>
@@ -290,9 +291,9 @@ const SHELTER_STYLES = `
   .shelter-nav-inner { width:min(100%,1040px); min-height:70px; display:grid; grid-template-columns:40px 1fr auto; align-items:center; gap:12px; margin:auto; padding:0 22px; }
   .shelter-back { width:38px; height:38px; display:grid; place-items:center; border:1px solid var(--line); border-radius:13px; color:var(--slate); background:#fff; cursor:pointer; transition:.2s; }
   .shelter-back:hover { color:var(--blue); border-color:#B8CCE1; transform:translateX(-2px); }
-  .shelter-brand { display:flex; align-items:center; gap:10px; }
+  .shelter-brand { min-width:0; display:flex; align-items:center; gap:10px; }
   .shelter-brand-mark { width:36px; height:36px; display:grid; place-items:center; border-radius:12px; color:#fff; background:linear-gradient(135deg,var(--blue),var(--blue-deep)); }
-  .shelter-brand strong,.shelter-brand small { display:block; }.shelter-brand strong { font-size:13px; }.shelter-brand small { margin-top:1px; color:var(--muted); font-size:9px; }
+  .shelter-brand strong,.shelter-brand small { display:block; }.shelter-brand strong { max-width:520px; font-size:13px; line-height:1.35; }.shelter-brand small { margin-top:1px; color:var(--muted); font-size:9px; }
   .shelter-home { display:flex; align-items:center; gap:3px; padding:8px 10px; border:0; color:var(--blue-strong); background:transparent; font-family:inherit; font-size:10px; font-weight:700; cursor:pointer; }
   .shelter-main { width:min(100%,1040px); margin:auto; padding:26px 22px 50px; }
   .shelter-hero { position:relative; min-height:190px; display:grid; grid-template-columns:1fr auto; align-items:end; gap:28px; overflow:hidden; padding:30px 32px; border-radius:27px; color:#fff; background:linear-gradient(135deg,var(--navy),var(--blue-deep)); box-shadow:0 18px 42px rgba(0,24,69,.16); }

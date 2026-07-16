@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Activity, ArrowLeft, Radio, ShieldCheck } from 'lucide-react';
 import SosRequestForm from './sos-request-form';
 import StatusTracker from './status-tracker';
+import { PROJECT_NAME } from '@/lib/brand';
 
 type DashboardTab = 'sos' | 'status';
 
@@ -32,7 +33,7 @@ export default function VictimDashboard({ initialTab }: { initialTab: DashboardT
         </button>
         <div className="victim-dashboard-brand">
           <span><ShieldCheck size={18} strokeWidth={2.2} /></span>
-          <div><strong>Nexus Rescue</strong><small>ระบบประสานงานช่วยเหลือ</small></div>
+          <div><strong>{PROJECT_NAME}</strong><small>ช่วยเหลือและติดตามสถานะแบบเรียลไทม์</small></div>
         </div>
         <div className="victim-dashboard-live"><i /> พร้อมให้บริการ</div>
       </header>

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { PROJECT_NAME } from '@/lib/brand';
 
 interface SOSReport {
   id: string;
@@ -104,9 +105,6 @@ const openNavigation = (lat: number, lng: number, label: string) => {
 const URGENCY_LABEL: Record<string, string> = {
   low: 'ต่ำ', medium: 'กลาง', high: 'สูง', critical: 'วิกฤต',
 };
-const URGENCY_COLOR: Record<string, string> = {
-  low: '#22C55E', medium: '#F59E0B', high: '#EF4444', critical: '#7C3AED',
-};
 const STATUS_LABEL: Record<string, string> = {
   pending: 'รอรับเรื่อง',
   assigned: 'กำลังช่วย',
@@ -120,7 +118,7 @@ export default function OfficerDashboard() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [myCoords, setMyCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [reports, setReports] = useState<SOSReport[]>([]);
-  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('active');
   const [filterDistrict, setFilterDistrict] = useState<string>('all');
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -133,6 +131,7 @@ export default function OfficerDashboard() {
   const [shelters, setShelters] = useState<Shelter[]>([]);
   // ข้อมูล modal "ยืนยันผลการช่วยเหลือ" ที่กำลังเปิดอยู่ (null = ปิดอยู่)
   const [outcomeDraft, setOutcomeDraft] = useState<OutcomeDraft | null>(null);
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const [outcomeSaving, setOutcomeSaving] = useState(false);
   // ข้อความแจ้งปัญหาสิทธิ์การเข้าใช้งาน (role/ศูนย์ยังไม่ถูกตั้งค่า) — โชว์ตรงๆ แทนการเด้งกลับ login แบบเงียบๆ
   // เพราะเคยทำให้ผู้ใช้เข้าใจผิดว่า session หลุด ทั้งที่จริงยัง login ค้างอยู่
@@ -441,17 +440,34 @@ export default function OfficerDashboard() {
     router.push('/');
   };
 
+  const urgencyRank: Record<SOSReport['urgency_level'], number> = {
+    critical: 4,
+    high: 3,
+    medium: 2,
+    low: 1,
+  };
+  const statusRank: Record<SOSReport['status'], number> = {
+    pending: 5,
+    assigned: 4,
+    cannot_reach: 3,
+    rescued: 2,
+    closed: 1,
+  };
   const filtered = reports
-    .filter(r => filterStatus === 'all' || r.status === filterStatus)
+    .filter(r => filterStatus === 'active'
+      ? r.status === 'pending' || r.status === 'assigned'
+      : filterStatus === 'all' || r.status === filterStatus)
     .filter(r => filterDistrict === 'all' || r.district === filterDistrict)
     .sort((a, b) => {
-      if (!myCoords) return 0;
-      const dA = parseFloat(calcDistance(myCoords.lat, myCoords.lng, a.lat ?? 0, a.lng ?? 0) ?? '999');
-      const dB = parseFloat(calcDistance(myCoords.lat, myCoords.lng, b.lat ?? 0, b.lng ?? 0) ?? '999');
-      return dA - dB;
+      const urgencyDifference = urgencyRank[b.urgency_level] - urgencyRank[a.urgency_level];
+      if (urgencyDifference !== 0) return urgencyDifference;
+      const statusDifference = statusRank[b.status] - statusRank[a.status];
+      if (statusDifference !== 0) return statusDifference;
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
     });
 
   const districts = [...new Set(reports.map(r => r.district).filter(Boolean))];
+  const selectedReport = reports.find(report => report.id === selectedReportId) ?? null;
 
   if (accessError) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "var(--font-thai), 'Noto Sans Thai', sans-serif", padding: 20 }}>
@@ -488,53 +504,50 @@ export default function OfficerDashboard() {
         @keyframes gentle-glow { 0%,100% { opacity: .4; transform: scale(.96); } 50% { opacity: .75; transform: scale(1.06); } }
         .rescue-app { --navy:#264653; --teal:#2A9D8F; --saffron:#E9C46A; --sand:#F4A261; --coral:#E76F51; --surface:#FFFEFC; --muted:#6B7C84; min-height:100vh !important; background:#E0FBFC !important; color:var(--navy); font-family:var(--font-thai),"Noto Sans Thai",sans-serif !important; padding-left:84px; }
         .rescue-app::before { content:""; position:fixed; width:420px; height:420px; border-radius:50%; background:rgba(42,157,143,.13); filter:blur(8px); right:-180px; top:56px; pointer-events:none; animation:gentle-glow 8s ease-in-out infinite; }
-        .rescue-rail { position:fixed; inset:0 auto 0 0; width:84px; z-index:80; background:#264653; display:flex; flex-direction:column; align-items:center; padding:18px 12px; box-shadow:12px 0 32px rgba(38,70,83,.12); }
-        .rail-brand { width:46px; height:46px; border-radius:16px; background:linear-gradient(135deg,#E9C46A,#F4A261); color:#264653; display:grid; place-items:center; font-size:20px; font-weight:900; box-shadow:0 8px 16px rgba(0,0,0,.16); }
-        .rail-menu { display:grid; gap:10px; margin-top:42px; }
-        .rail-button { border:0; width:48px; height:48px; border-radius:15px; color:rgba(255,255,255,.72); background:transparent; cursor:pointer; font:700 19px/1 inherit; transition:transform .2s ease,background .2s ease,color .2s ease; }
-        .rail-button:hover,.rail-button.active { background:#2A9D8F; color:#fff; transform:translateY(-2px); }.rail-button.exit{margin-top:auto;font-size:18px}
         .rescue-app > header { background:rgba(255,254,252,.82) !important; backdrop-filter:blur(18px); border-bottom:1px solid rgba(38,70,83,.08) !important; padding:15px 28px !important; }.rescue-app > header > div{max-width:1440px !important}.rescue-app > header button{border-color:rgba(38,70,83,.12) !important;color:#264653 !important;border-radius:12px !important;transition:background .2s ease,transform .2s ease !important}.rescue-app > header button:hover{background:#fff7ed !important;transform:translateY(-1px)}
         .rescue-app main { max-width:1440px !important; padding:28px !important; position:relative; z-index:1; }.legacy-summary{display:none !important}
         .dashboard-overview { display:grid; grid-template-columns:minmax(0,1.55fr) minmax(300px,.75fr); gap:18px; margin-bottom:18px; animation:rise-in .45s ease both; }.operation-hero{min-height:206px;overflow:hidden;position:relative;border-radius:26px;padding:28px;color:#fff;background:linear-gradient(125deg,#264653,#31677a);box-shadow:0 18px 42px rgba(38,70,83,.18)}.operation-hero::after{content:"";position:absolute;width:230px;height:230px;right:-72px;bottom:-102px;border:32px solid rgba(233,196,106,.38);border-radius:50%}.operation-kicker{display:flex;gap:8px;align-items:center;color:#E9C46A;font-size:12px;font-weight:800;letter-spacing:.08em}.operation-kicker i{width:8px;height:8px;border-radius:50%;background:#E9C46A;box-shadow:0 0 0 5px rgba(233,196,106,.14)}.operation-hero h1{font-size:clamp(23px,3vw,32px);letter-spacing:-.035em;line-height:1.22;margin:18px 0 7px;position:relative;z-index:1}.operation-hero p{color:rgba(255,255,255,.76);font-size:14px;position:relative;z-index:1}.operation-summary{display:flex;position:relative;z-index:1;gap:18px;margin-top:24px}.operation-summary span{display:grid;gap:2px;font-size:12px;color:rgba(255,255,255,.65)}.operation-summary b{color:#fff;font-size:20px;line-height:1}
         .metric-stack{display:grid;grid-template-columns:1fr 1fr;gap:12px}.metric-card{background:#FFFEFC;min-height:97px;padding:18px;border:1px solid rgba(38,70,83,.08);border-radius:22px;box-shadow:0 10px 24px rgba(38,70,83,.06);transition:transform .2s ease,box-shadow .2s ease}.metric-card:hover{transform:translateY(-3px);box-shadow:0 16px 28px rgba(38,70,83,.1)}.metric-card:nth-child(1){background:#fff8e7}.metric-card:nth-child(2){background:#ecf9f7}.metric-card:nth-child(3){background:#fff0ec}.metric-card:nth-child(4){background:#f5f8f9}.metric-label{font-size:12px;color:#6B7C84;font-weight:600}.metric-value{margin-top:6px;font-size:27px;line-height:1;font-weight:800;color:#264653}
         .filter-bar{background:rgba(255,254,252,.9) !important;border:1px solid rgba(38,70,83,.08) !important;border-radius:22px !important;padding:12px !important;margin-bottom:18px !important;box-shadow:0 9px 22px rgba(38,70,83,.05)}.filter-label{margin:0 6px 0 4px;color:#264653;font-size:13px;font-weight:800}.filter-button{background:#edf4f4 !important;color:#6B7C84 !important;border:1px solid transparent !important;border-radius:12px !important;padding:8px 13px !important;transition:all .2s ease !important}.filter-button:hover{background:#d8efeb !important;color:#2A9D8F !important;transform:translateY(-1px)}.filter-button.selected{background:#2A9D8F !important;color:#fff !important;box-shadow:0 5px 12px rgba(42,157,143,.2)}.district-filter{border-color:rgba(38,70,83,.1) !important;background:#fff !important;color:#264653;border-radius:12px !important;padding:8px 11px !important}
         .report-grid{gap:16px !important}.rescue-card{border:1px solid rgba(38,70,83,.09) !important;background:#FFFEFC !important;border-radius:22px !important;padding:18px !important;box-shadow:0 9px 24px rgba(38,70,83,.055) !important;transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease !important;animation:rise-in .45s ease both}.rescue-card:hover{transform:translateY(-4px);border-color:rgba(42,157,143,.36) !important;box-shadow:0 18px 32px rgba(38,70,83,.11) !important}.rescue-card > div:nth-child(3){background:#f3f8f8 !important;border-color:#e1eeee !important;border-radius:14px !important}.rescue-card button{transition:transform .18s ease,filter .18s ease,box-shadow .18s ease !important}.rescue-card button:hover:not(:disabled){transform:translateY(-1px);filter:saturate(1.06);box-shadow:0 6px 14px rgba(38,70,83,.12)}.rescue-card button:active:not(:disabled){transform:scale(.98)}.rescue-card button[style*="EF4444"]{background:#E76F51 !important}.rescue-card button[style*="1D4ED8"]{background:#2A9D8F !important}.outcome-backdrop{background:rgba(38,70,83,.54) !important;backdrop-filter:blur(5px)}.outcome-sheet{border:1px solid rgba(38,70,83,.08);box-shadow:0 -12px 42px rgba(38,70,83,.17)}
-        @media(max-width:760px){.rescue-app{padding-left:0;padding-bottom:72px}.rescue-rail{width:100%;height:64px;inset:auto 0 0;flex-direction:row;padding:8px 16px;justify-content:space-between}.rail-brand{width:38px;height:38px;border-radius:13px;font-size:16px}.rail-menu{margin:0;display:flex;gap:6px}.rail-button{width:40px;height:40px;font-size:17px;border-radius:13px}.rail-button.exit{margin:0}.rescue-app>header{padding:13px 16px !important}.rescue-app>header>div>div:last-child{gap:7px !important}.rescue-app>header button{padding:7px 9px !important;font-size:11px !important}.dashboard-overview{grid-template-columns:1fr}.operation-hero{min-height:192px;padding:22px}.rescue-app main{padding:17px 14px 24px !important}.filter-label{width:100%;margin:0 4px 2px}.district-filter{margin-left:0 !important;width:100%}}
+        /* Blue minimal operations workspace */
+        .rescue-app{--blue:#0466C8;--blue-strong:#0353A4;--blue-deep:#023E7D;--navy:#002855;--ink:#001845;--midnight:#001233;--slate:#33415C;--muted:#7D8597;--line:#DDE3EC;padding-left:0!important;background:linear-gradient(145deg,#FAFCFF,#F2F6FB 55%,#EAF1F9)!important;color:var(--ink)}
+        .rescue-app::before{background:rgba(4,102,200,.08)}
+        .rescue-app>header{border-top:4px solid var(--blue)!important;background:rgba(255,255,255,.9)!important}.rescue-app>header>div{max-width:1160px!important}.rescue-app>header button{color:var(--slate)!important;border-color:var(--line)!important}.rescue-app main{max-width:1160px!important}
+        .rescue-header-mark{flex:0 0 40px;background:linear-gradient(135deg,var(--blue),var(--blue-deep))!important}.rescue-header-title{max-width:520px;color:var(--ink)!important;font-size:16px!important;line-height:1.35}.rescue-header-user{color:var(--muted)!important;font-size:12px!important}.rescue-online{color:var(--blue)!important}.rescue-online>span{background:var(--blue)!important}.rescue-logout:hover{color:var(--blue)!important;background:#F1F6FC!important}
+        .navigation-banner{background:linear-gradient(90deg,var(--blue-deep),var(--blue))!important;animation:none!important;box-shadow:0 9px 24px rgba(0,24,69,.13)}.navigation-banner>button{color:var(--blue-deep)!important}.navigation-banner>button:last-child{color:#fff!important;background:rgba(255,255,255,.13)!important}
+        .operation-hero{background:linear-gradient(125deg,var(--navy),var(--blue-deep));box-shadow:0 18px 42px rgba(0,24,69,.17)}.operation-hero::after{border-color:rgba(4,102,200,.35)}.operation-kicker{color:#A9CDEC}.operation-kicker i{background:#70AEE7;box-shadow:0 0 0 5px rgba(4,102,200,.18)}
+        .metric-card{border-color:rgba(51,65,92,.1);background:#fff!important;box-shadow:0 9px 25px rgba(0,24,69,.05)}.metric-card:nth-child(1){background:#EAF3FC!important}.metric-card:nth-child(2){background:#EEF2F7!important}.metric-value{color:var(--ink)}
+        .filter-bar{border-color:rgba(51,65,92,.1)!important;background:rgba(255,255,255,.9)!important}.filter-label{color:var(--ink)}.filter-button{min-height:40px;background:#EEF2F7!important;color:var(--slate)!important}.filter-button:hover{color:var(--blue)!important;background:#EAF3FC!important}.filter-button.selected{color:#fff!important;background:var(--blue)!important;box-shadow:0 5px 13px rgba(4,102,200,.2)}.district-filter{min-height:40px;color:var(--slate)!important;border-color:var(--line)!important}
+        .mission-list{display:grid;gap:9px}.mission-row{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 112px;gap:8px;overflow:hidden;border:1px solid rgba(51,65,92,.11);border-radius:17px;background:rgba(255,255,255,.92);box-shadow:0 7px 20px rgba(0,24,69,.04);transition:.2s}.mission-row::before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:var(--muted)}.mission-row.urgency-critical::before{background:var(--midnight)}.mission-row.urgency-high::before{background:var(--blue-strong)}.mission-row.urgency-medium::before{background:var(--slate)}.mission-row:hover{transform:translateY(-2px);border-color:#BED0E2;box-shadow:0 12px 27px rgba(0,24,69,.08)}
+        .mission-open{min-width:0;display:flex;align-items:center;padding:17px 12px 17px 20px;border:0;color:var(--ink);background:transparent;font:inherit;text-align:left;cursor:pointer}.mission-name{min-width:0}.mission-name strong{display:block;overflow:hidden;font-size:16px;text-overflow:ellipsis;white-space:nowrap}.mission-map{margin:8px;display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid #B8CEE4;border-radius:12px;color:var(--blue-strong);background:#F2F7FC;font:700 13px/1 inherit;cursor:pointer}.mission-map:hover{color:#fff;background:var(--blue)}.mission-map:disabled{color:var(--pale);border-color:var(--line);background:#F1F3F6;cursor:not-allowed}.mission-empty{padding:60px 20px;text-align:center;color:var(--muted);font-size:15px}
+        .mission-modal-backdrop{--blue:#0466C8;--blue-strong:#0353A4;--blue-deep:#023E7D;--navy:#002855;--ink:#001845;--midnight:#001233;--slate:#33415C;--muted:#7D8597;--line:#DDE3EC;position:fixed;inset:0;z-index:110;display:grid;place-items:center;padding:20px;background:rgba(0,18,51,.58);backdrop-filter:blur(7px)}.mission-modal{position:relative;width:min(100%,620px);max-height:min(88vh,760px);overflow:auto;border:1px solid rgba(255,255,255,.13);border-radius:25px;background:#fff;box-shadow:0 28px 80px rgba(0,18,51,.28);animation:rise-in .25s ease}.mission-modal-close{position:absolute;z-index:3;right:14px;top:14px;width:38px;height:38px;border:1px solid rgba(255,255,255,.25);border-radius:12px;color:#fff;background:rgba(255,255,255,.12);font:500 24px/1 inherit;cursor:pointer}.mission-modal-hero{padding:27px 64px 24px 25px;color:#fff;background:linear-gradient(135deg,#002855,#023E7D)}.mission-modal-kicker{color:#A9CDEC;font-size:11px;font-weight:750;letter-spacing:.08em}.mission-modal h2{margin:7px 0 3px;color:#fff!important;font-size:25px}.mission-modal-hero p{color:rgba(255,255,255,.72);font-size:13px}.mission-modal-body{display:grid;gap:13px;padding:21px}.mission-modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.mission-modal-grid>div{padding:12px;border:1px solid var(--line);border-radius:12px;background:#F8FAFD}.mission-modal-grid .wide{grid-column:1/-1}.mission-modal-grid .important{border-left:3px solid var(--blue);background:#EAF3FC}.mission-modal-grid span,.mission-modal-grid strong,.mission-modal-grid small{display:block}.mission-modal-grid span{color:var(--muted);font-size:11px}.mission-modal-grid strong{margin-top:3px;color:var(--slate);font-size:14px;line-height:1.5}.mission-modal-grid small{margin-top:2px;color:var(--muted);font-size:12px}.mission-modal-map,.mission-modal-primary{min-height:48px;border-radius:12px;font:750 14px/1 inherit;cursor:pointer}.mission-modal-map{border:1px solid #B8CEE4;color:var(--blue);background:#F1F6FC}.mission-modal-primary{border:0;color:#fff;background:linear-gradient(135deg,var(--blue),var(--blue-strong));box-shadow:0 7px 17px rgba(4,102,200,.17)}.mission-modal-primary.dark{background:var(--midnight)}.mission-modal-actions{display:grid;gap:9px}.mission-stage{padding:10px;border-radius:11px;color:var(--blue-deep);background:#EAF3FC;text-align:center;font-size:13px;font-weight:700}.mission-stage-buttons{display:grid;grid-template-columns:1fr 1fr;gap:8px}.mission-stage-buttons button{min-height:44px;border:1px solid var(--line);border-radius:11px;color:var(--slate);background:#F5F8FC;font:700 13px/1 inherit;cursor:pointer}.mission-stage-buttons button.active{color:#fff;border-color:var(--blue);background:var(--blue)}
+        .outcome-backdrop{align-items:center!important;padding:20px}.outcome-sheet{border-radius:22px!important;max-height:88vh!important;box-shadow:0 25px 70px rgba(0,18,51,.3)!important}
+        @media(max-width:760px){.rescue-app{padding-left:0;padding-bottom:0}.rescue-app>header{padding:13px 14px!important}.rescue-app>header>div>div:last-child{gap:7px!important}.rescue-app>header button{padding:8px 9px!important;font-size:12px!important}.dashboard-overview{grid-template-columns:1fr}.operation-hero{min-height:192px;padding:22px}.rescue-app main{padding:17px 13px 28px!important}.filter-label{width:100%;margin:0 4px 2px}.district-filter{margin-left:0!important;width:100%}.mission-row{grid-template-columns:minmax(0,1fr) 86px}.mission-open{padding-left:16px}.mission-map{font-size:12px}.mission-modal-backdrop{padding:11px}.mission-modal{max-height:92vh;border-radius:20px}.mission-modal-grid{grid-template-columns:1fr}.mission-modal-grid .wide{grid-column:auto}}
       `}</style>
 
       <div className="rescue-app" style={{ minHeight: '100vh', background: '#F0F2FA', fontFamily: "var(--font-thai), 'Noto Sans Thai', sans-serif" }}>
-        <nav className="rescue-rail" aria-label="Operation navigation">
-          <div className="rail-brand" aria-hidden="true">N</div>
-          <div className="rail-menu">
-            <button className={`rail-button ${filterStatus === 'all' ? 'active' : ''}`} type="button" aria-label="Overview" onClick={() => setFilterStatus('all')}>⌂</button>
-            <button className={`rail-button ${filterStatus === 'pending' ? 'active' : ''}`} type="button" aria-label="Pending requests" onClick={() => setFilterStatus('pending')}>!</button>
-            <button className={`rail-button ${filterStatus === 'assigned' ? 'active' : ''}`} type="button" aria-label="Active missions" onClick={() => setFilterStatus('assigned')}>↗</button>
-            <button className={`rail-button ${filterStatus === 'rescued' ? 'active' : ''}`} type="button" aria-label="Completed missions" onClick={() => setFilterStatus('rescued')}>✓</button>
-          </div>
-          <button className="rail-button exit" type="button" aria-label="Sign out" onClick={handleLogout}>↪</button>
-        </nav>
-
         {/* Header */}
         <header style={{ background: '#fff', borderBottom: '1px solid #ECEEF5', padding: '14px 20px', position: 'sticky', top: 0, zIndex: 50 }}>
           <div style={{ maxWidth: 960, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 40, height: 40, borderRadius: 11, background: 'linear-gradient(135deg,#6D5EF9,#5046e5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div className="rescue-header-mark" style={{ width: 40, height: 40, borderRadius: 11, background: 'linear-gradient(135deg,#6D5EF9,#5046e5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
                   <path d="M12 2L4 5v6c0 5.5 3.8 10.7 8 12 4.2-1.3 8-6.5 8-12V5L12 2z" fill="rgba(255,255,255,0.2)" stroke="white" strokeWidth="1.5"/>
                   <path d="M9 12l2 2 4-4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </div>
               <div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: '#111827' }}>ศูนย์ปฏิบัติการกู้ภัย</div>
-                <div style={{ fontSize: 11, color: '#9CA3AF' }}>{profile?.full_name} · {profile?.agency ?? 'ไม่ระบุหน่วยงาน'}</div>
+                <div className="rescue-header-title" style={{ fontSize: 15, fontWeight: 700, color: '#111827' }}>{PROJECT_NAME}</div>
+                <div className="rescue-header-user" style={{ fontSize: 11, color: '#9CA3AF' }}>{profile?.full_name} · {profile?.agency ?? 'ไม่ระบุหน่วยงาน'}</div>
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#22C55E', fontWeight: 600 }}>
+              <div className="rescue-online" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#22C55E', fontWeight: 600 }}>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#22C55E', display: 'inline-block', animation: 'ping 2s infinite' }} />
                 ออนไลน์
               </div>
-              <button onClick={handleLogout} style={{ padding: '7px 14px', borderRadius: 10, border: '1px solid #ECEEF5', background: '#fff', fontSize: 13, fontWeight: 600, color: '#6B7280', cursor: 'pointer' }}>
+              <button className="rescue-logout" onClick={handleLogout} style={{ padding: '7px 14px', borderRadius: 10, border: '1px solid #ECEEF5', background: '#fff', fontSize: 13, fontWeight: 600, color: '#6B7280', cursor: 'pointer' }}>
                 ออกจากระบบ
               </button>
             </div>
@@ -551,7 +564,7 @@ export default function OfficerDashboard() {
             : null;
           const locationLabel = `${job.sub_district} ${job.district} ${job.province}`;
           return (
-            <div style={{
+            <div className="navigation-banner" style={{
               background: '#EF4444',
               padding: '12px 20px',
               display: 'flex', alignItems: 'center', gap: 12,
@@ -652,7 +665,7 @@ export default function OfficerDashboard() {
           {/* Filters */}
           <div className="filter-bar" style={{ background: '#fff', borderRadius: 16, padding: '14px 16px', marginBottom: 16, border: '1px solid #ECEEF5', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span className="filter-label">จัดลำดับภารกิจ</span>
-            {['all', 'pending', 'assigned', 'rescued', 'cannot_reach'].map(s => (
+            {['active', 'pending', 'assigned', 'rescued', 'cannot_reach', 'all'].map(s => (
               <button className={`filter-button ${filterStatus === s ? 'selected' : ''}`} key={s} onClick={() => setFilterStatus(s)}
                 style={{
                   padding: '6px 14px', borderRadius: 10, border: 'none', cursor: 'pointer',
@@ -661,7 +674,7 @@ export default function OfficerDashboard() {
                   color: filterStatus === s ? '#fff' : '#6B7280',
                   fontFamily: 'inherit',
                 }}>
-                {s === 'all' ? 'ทั้งหมด' : STATUS_LABEL[s]}
+                {s === 'active' ? 'งานที่ต้องดูแล' : s === 'all' ? 'ทั้งหมด' : STATUS_LABEL[s]}
               </button>
             ))}
             <select className="district-filter" value={filterDistrict} onChange={e => setFilterDistrict(e.target.value)}
@@ -673,187 +686,99 @@ export default function OfficerDashboard() {
 
           {/* Cards */}
           {filtered.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '60px 0', color: '#9CA3AF', fontSize: 15 }}>
-              ไม่พบรายการที่ตรงกับเงื่อนไข
-            </div>
+            <div className="mission-empty">ไม่พบรายการที่ตรงกับเงื่อนไข</div>
           ) : (
-            <div className="report-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 14 }}>
-              {filtered.map(item => {
-                const dist = myCoords ? calcDistance(myCoords.lat, myCoords.lng, item.lat ?? 0, item.lng ?? 0) : null;
-                const isLoading = actionLoading === item.id;
-                const urgColor = URGENCY_COLOR[item.urgency_level] ?? '#6B7280';
-                const isMyJob = navigatingId === item.id;
+            <div className="mission-list" aria-label="รายการคำขอเรียงตามความรุนแรง">
+              {filtered.map((item) => {
                 const locationLabel = `${item.sub_district} ${item.district} ${item.province}`;
-                const stage = jobStage[item.id];
-
                 return (
-                  <div className="rescue-card" key={item.id} style={{
-                    background: '#fff', borderRadius: 20, padding: 20,
-                    border: `1.5px solid ${isMyJob ? '#EF4444' : item.status === 'pending' ? '#FECACA' : item.status === 'assigned' ? '#FDE68A' : '#ECEEF5'}`,
-                    display: 'flex', flexDirection: 'column', gap: 12,
-                    boxShadow: isMyJob ? '0 0 0 3px rgba(239,68,68,0.12)' : 'none',
-                  }}>
-
-                    {/* Status row */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 8, background: `${urgColor}18`, color: urgColor }}>
-                        {URGENCY_LABEL[item.urgency_level]} · น้ำ {item.water_level ?? '-'}/5
+                  <article className={`mission-row urgency-${item.urgency_level}`} key={item.id}>
+                    <button className="mission-open" type="button" onClick={() => setSelectedReportId(item.id)}>
+                      <span className="mission-name">
+                        <strong>{item.full_name}</strong>
                       </span>
-                      <span style={{ fontSize: 11, fontWeight: 600, color: '#6D5EF9', background: '#EDE9FE', padding: '3px 10px', borderRadius: 8 }}>
-                        {STATUS_LABEL[item.status]}
-                      </span>
-                    </div>
-
-                    {/* Name */}
-                    <div>
-                      <div style={{ fontSize: 16, fontWeight: 700, color: '#111827' }}>{item.full_name}</div>
-                      <div style={{ fontSize: 13, color: '#6B7280', marginTop: 2 }}>📞 {item.phone}</div>
-                    </div>
-
-                    {/* Location info */}
-                    <div style={{ background: '#F9FAFB', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: '#374151', lineHeight: 1.7, border: '1px solid #F3F4F6' }}>
-                      <div>📍 {locationLabel}</div>
-                      {item.address_details && <div style={{ color: '#6B7280' }}>{item.address_details}</div>}
-                      {item.needed_items && item.needed_items.length > 0 && (
-                        <div>📦 {item.needed_items.join(', ')}</div>
-                      )}
-                      {(item.adult_count !== undefined) && (
-                        <div style={{ color: '#EF4444', fontWeight: 600, marginTop: 4 }}>
-                          ผู้ใหญ่ {item.adult_count} · เด็ก {item.child_count} · สูงอายุ {item.elder_count}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Distance + inline navigation */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      {dist && <span style={{ fontSize: 12, color: '#6D5EF9', fontWeight: 600 }}>ห่าง {dist} กม.</span>}
-                      {item.lat && item.lng && (
-                        /* ปุ่มนำทางเล็กใน card — ใช้ได้กับทุกเคส */
-                        <button
-                          onClick={() => openNavigation(item.lat!, item.lng!, locationLabel)}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: 5,
-                            padding: '4px 10px', borderRadius: 8, border: 'none',
-                            background: '#EFF6FF', color: '#1D4ED8',
-                            fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                            fontFamily: 'inherit',
-                          }}
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
-                            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#1D4ED8"/>
-                            <circle cx="12" cy="9" r="2.5" fill="white"/>
-                          </svg>
-                          Maps
-                        </button>
-                      )}
-                      <span style={{ marginLeft: 'auto', fontSize: 11, color: '#9CA3AF' }}>
-                        {new Date(item.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    </div>
-
-                    {/* ── Action Buttons ── */}
-                    {item.status === 'pending' && (
-                      <button onClick={() => acceptJob(item.id)} disabled={isLoading}
-                        style={{
-                          width: '100%', padding: '12px', borderRadius: 12, border: 'none',
-                          background: isLoading ? '#E5E7EB' : '#EF4444', color: '#fff',
-                          fontSize: 14, fontWeight: 700, cursor: isLoading ? 'not-allowed' : 'pointer',
-                          fontFamily: 'inherit',
-                        }}>
-                        {isLoading ? 'กำลังรับงาน...' : '📥 รับงานนี้'}
-                      </button>
-                    )}
-
-                    {item.status === 'assigned' && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-
-                        {/* Badge บอกขั้นตอนปัจจุบันของงาน — มาจาก assignments.status จริง
-                            เพื่อยืนยันว่ากดปุ่ม "กำลังเดินทาง" / "ถึงที่เกิดเหตุ" แล้วมีผลจริง */}
-                        {stage && (
-                          <div style={{
-                            fontSize: 12, fontWeight: 700, textAlign: 'center',
-                            padding: '7px 10px', borderRadius: 8,
-                            background: stage === 'on_scene' ? '#FEF3C7' : stage === 'en_route' ? '#DBEAFE' : '#F3F4F6',
-                            color: stage === 'on_scene' ? '#92400E' : stage === 'en_route' ? '#1D4ED8' : '#6B7280',
-                          }}>
-                            {stage === 'on_scene' ? '📍 ถึงที่เกิดเหตุแล้ว' : stage === 'en_route' ? '🚒 กำลังเดินทางไปที่เกิดเหตุ' : '📥 รับงานแล้ว รอออกเดินทาง'}
-                          </div>
-                        )}
-
-                        {/* ปุ่มนำทางใหญ่ — แสดงเฉพาะงานที่ตัวเองรับ */}
-                        {isMyJob && item.lat && item.lng && (
-                          <button
-                            onClick={() => openNavigation(item.lat!, item.lng!, locationLabel)}
-                            style={{
-                              width: '100%', padding: '13px', borderRadius: 12, border: 'none',
-                              background: '#1D4ED8', color: '#fff',
-                              fontSize: 14, fontWeight: 700, cursor: 'pointer',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                              fontFamily: 'inherit',
-                              boxShadow: '0 4px 16px rgba(29,78,216,0.35)',
-                            }}
-                          >
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                              <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="white"/>
-                              <circle cx="12" cy="9" r="2.5" fill="#1D4ED8"/>
-                            </svg>
-                            เปิด Google Maps นำทาง
-                          </button>
-                        )}
-
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                          <button onClick={() => updateAssignment(item.id, 'assigned', 'en_route')} disabled={isLoading}
-                            style={{
-                              padding: '10px', borderRadius: 10, border: 'none',
-                              background: stage === 'en_route' ? '#1D4ED8' : '#DBEAFE',
-                              color: stage === 'en_route' ? '#fff' : '#1D4ED8',
-                              fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-                            }}>
-                            {stage === 'en_route' ? '✓ ' : ''}🚒 กำลังเดินทาง
-                          </button>
-                          <button onClick={() => updateAssignment(item.id, 'assigned', 'on_scene')} disabled={isLoading}
-                            style={{
-                              padding: '10px', borderRadius: 10, border: 'none',
-                              background: stage === 'on_scene' ? '#F59E0B' : '#FEF3C7',
-                              color: stage === 'on_scene' ? '#fff' : '#92400E',
-                              fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-                            }}>
-                            {stage === 'on_scene' ? '✓ ' : ''}📍 ถึงที่เกิดเหตุ
-                          </button>
-                        </div>
-                        {/* เปิด modal ยืนยันผลการช่วยเหลือละเอียด แทนการกดจบงานตรงๆ
-                            เพื่อบังคับให้ระบุปลายทาง (ศูนย์พักพิง/อื่นๆ) หรือเหตุผลที่เข้าไม่ถึง */}
-                        <button onClick={() => openOutcomeModal(item)} disabled={isLoading}
-                          style={{
-                            width: '100%', padding: '12px', borderRadius: 10, border: 'none',
-                            background: '#111827', color: '#fff',
-                            fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-                          }}>
-                          📋 ยืนยันผลการช่วยเหลือ
-                        </button>
-                      </div>
-                    )}
-
-                    {item.status === 'rescued' && (
-                      <div style={{ textAlign: 'center', padding: '10px', background: '#D1FAE5', borderRadius: 10, fontSize: 13, fontWeight: 700, color: '#065F46' }}>
-                        ✅ ช่วยเหลือสำเร็จแล้ว
-                      </div>
-                    )}
-
-                    {item.status === 'cannot_reach' && (
-                      <button onClick={() => acceptJob(item.id)} disabled={isLoading}
-                        style={{ width: '100%', padding: '10px', borderRadius: 10, border: 'none', background: '#F3F4F6', color: '#374151', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                        ↩️ ลองเข้าใหม่
-                      </button>
-                    )}
-
-                  </div>
+                    </button>
+                    <button
+                      className="mission-map"
+                      type="button"
+                      disabled={!item.lat || !item.lng}
+                      onClick={() => item.lat && item.lng && openNavigation(item.lat, item.lng, locationLabel)}
+                      aria-label={`เปิดแผนที่ของ ${item.full_name}`}
+                    >
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="currentColor" />
+                        <circle cx="12" cy="9" r="2.5" fill="white" />
+                      </svg>
+                      <span>แผนที่</span>
+                    </button>
+                  </article>
                 );
               })}
             </div>
           )}
+
         </main>
       </div>
+
+      {selectedReport && (() => {
+        const item = selectedReport;
+        const isLoading = actionLoading === item.id;
+        const locationLabel = `${item.sub_district} ${item.district} ${item.province}`;
+        const stage = jobStage[item.id];
+        const totalPeople = (item.adult_count ?? 0) + (item.child_count ?? 0) + (item.elder_count ?? 0);
+
+        return (
+          <div className="mission-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedReportId(null); }}>
+            <section className="mission-modal" role="dialog" aria-modal="true" aria-labelledby="mission-modal-title">
+              <button className="mission-modal-close" type="button" onClick={() => setSelectedReportId(null)} aria-label="ปิดรายละเอียด">×</button>
+              <div className="mission-modal-hero">
+                <span className="mission-modal-kicker">ลำดับความเร่งด่วน · {URGENCY_LABEL[item.urgency_level]}</span>
+                <h2 id="mission-modal-title">{item.full_name}</h2>
+                <p>{STATUS_LABEL[item.status]} · แจ้งเมื่อ {new Date(item.created_at).toLocaleString('th-TH')}</p>
+              </div>
+
+              <div className="mission-modal-body">
+                <div className="mission-modal-grid">
+                  <div><span>เบอร์โทร</span><strong>{item.phone}</strong></div>
+                  <div><span>ผู้ประสบภัย</span><strong>{totalPeople} คน</strong></div>
+                  <div className="wide"><span>พื้นที่</span><strong>{locationLabel}</strong><small>{item.address_details || 'ไม่ระบุจุดสังเกตเพิ่มเติม'}</small></div>
+                  <div><span>ระดับน้ำ</span><strong>{item.water_level ?? '-'} เมตร</strong></div>
+                  <div><span>กลุ่มคน</span><strong>ผู้ใหญ่ {item.adult_count ?? 0} · เด็ก {item.child_count ?? 0} · สูงอายุ {item.elder_count ?? 0}</strong></div>
+                  <div className="wide"><span>สิ่งของที่ต้องการ</span><strong>{item.needed_items?.length ? item.needed_items.join(', ') : 'ไม่ได้ระบุ'}</strong></div>
+                  {item.special_needs && <div className="wide important"><span>หมายเหตุสำคัญ</span><strong>{item.special_needs}</strong></div>}
+                </div>
+
+                {item.lat && item.lng && (
+                  <button className="mission-modal-map" type="button" onClick={() => openNavigation(item.lat!, item.lng!, locationLabel)}>
+                    เปิด Google Maps นำทาง
+                  </button>
+                )}
+
+                {item.status === 'pending' && (
+                  <button className="mission-modal-primary" type="button" onClick={() => acceptJob(item.id)} disabled={isLoading}>
+                    {isLoading ? 'กำลังรับงาน...' : 'รับงานนี้'}
+                  </button>
+                )}
+
+                {item.status === 'assigned' && (
+                  <div className="mission-modal-actions">
+                    <div className="mission-stage">{stage === 'on_scene' ? 'ถึงที่เกิดเหตุแล้ว' : stage === 'en_route' ? 'กำลังเดินทาง' : 'รับงานแล้ว'}</div>
+                    <div className="mission-stage-buttons">
+                      <button className={stage === 'en_route' ? 'active' : ''} type="button" onClick={() => updateAssignment(item.id, 'assigned', 'en_route')} disabled={isLoading}>กำลังเดินทาง</button>
+                      <button className={stage === 'on_scene' ? 'active' : ''} type="button" onClick={() => updateAssignment(item.id, 'assigned', 'on_scene')} disabled={isLoading}>ถึงที่เกิดเหตุ</button>
+                    </div>
+                    <button className="mission-modal-primary dark" type="button" onClick={() => { setSelectedReportId(null); openOutcomeModal(item); }} disabled={isLoading}>ยืนยันผลการช่วยเหลือ</button>
+                  </div>
+                )}
+
+                {item.status === 'cannot_reach' && (
+                  <button className="mission-modal-primary" type="button" onClick={() => acceptJob(item.id)} disabled={isLoading}>ลองเข้าพื้นที่ใหม่</button>
+                )}
+              </div>
+            </section>
+          </div>
+        );
+      })()}
 
       {/* ── Modal: ยืนยันผลการช่วยเหลือ ───────────────────────────── */}
       {outcomeDraft && (

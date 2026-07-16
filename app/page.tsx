@@ -4,6 +4,7 @@ import React from 'react';
 import dynamic from 'next/dynamic';
 import { usePathname, useRouter } from 'next/navigation';
 import type { LucideIcon } from 'lucide-react';
+import { PROJECT_NAME } from '@/lib/brand';
 import {
   Activity,
   AlertTriangle,
@@ -51,8 +52,8 @@ export default function HomePage() {
               <ShieldCheck size={21} strokeWidth={2.2} />
             </div>
             <div>
-              <div className="home-brand-name">Nexus Rescue</div>
-              <div className="home-brand-subtitle">ระบบประสานงานภัยพิบัติ</div>
+              <div className="home-brand-name">{PROJECT_NAME}</div>
+              <div className="home-brand-subtitle">ช่วยเหลือรวดเร็ว ติดตามสถานะได้ทุกขั้นตอน</div>
             </div>
           </div>
 
@@ -241,7 +242,7 @@ const HOME_STYLES = `
     justify-content:space-between;
     margin:0 auto;
   }
-  .home-brand { display:flex; align-items:center; gap:12px; }
+  .home-brand { min-width:0; display:flex; align-items:center; gap:12px; }
   .home-brand-mark {
     width:44px;
     height:44px;
@@ -252,7 +253,7 @@ const HOME_STYLES = `
     background:linear-gradient(145deg,var(--blue),var(--blue-deep));
     box-shadow:0 9px 24px rgba(4,102,200,.2);
   }
-  .home-brand-name { font-size:15px; line-height:1.2; font-weight:800; letter-spacing:-.02em; }
+  .home-brand-name { max-width:390px; font-size:15px; line-height:1.3; font-weight:800; letter-spacing:-.02em; }
   .home-brand-subtitle { margin-top:3px; color:var(--muted); font-size:10px; font-weight:500; letter-spacing:.04em; }
   .home-notification {
     position:relative;
@@ -411,7 +412,9 @@ const HOME_STYLES = `
   @media(max-width:560px) {
     .home-shell { padding:0 15px 108px; }
     .home-header { min-height:78px; }
-    .home-brand-mark { width:40px; height:40px; border-radius:13px; }
+    .home-brand-mark { width:40px; height:40px; flex:0 0 40px; border-radius:13px; }
+    .home-brand-name { max-width:245px; font-size:15px; line-height:1.35; }
+    .home-brand-subtitle { display:none; }
     .home-main { gap:18px; margin-top:14px; }
     .home-heading-wrap { margin-bottom:18px; }
     .home-heading-wrap h1 { margin-top:9px; font-size:38px; }

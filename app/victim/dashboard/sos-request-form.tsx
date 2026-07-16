@@ -34,6 +34,43 @@ const STEP_META = [
   { number: 3, label: 'สถานการณ์', icon: Waves },
 ] as const;
 
+type UrgencyLevel = 'low' | 'medium' | 'high' | 'critical';
+
+function calculateUrgency({
+  waterLevel,
+  adultCount,
+  childCount,
+  elderCount,
+  specialNeeds,
+  neededItems,
+}: {
+  waterLevel: number;
+  adultCount: number;
+  childCount: number;
+  elderCount: number;
+  specialNeeds: string;
+  neededItems: string[];
+}): UrgencyLevel {
+  const totalPeople = adultCount + childCount + elderCount;
+  const vulnerablePeople = childCount + elderCount;
+  const hasSpecialNeeds = specialNeeds.trim().length > 0;
+  const needsRescueEquipment = neededItems.some((item) => item.includes('ชูชีพ'));
+  const needsMedicine = neededItems.some((item) => item.includes('ยา'));
+
+  const riskScore =
+    waterLevel * 2
+    + Math.min(totalPeople, 8) * 0.5
+    + Math.min(vulnerablePeople, 4)
+    + (hasSpecialNeeds ? 3 : 0)
+    + (needsRescueEquipment ? 2 : 0)
+    + (needsMedicine ? 1 : 0);
+
+  if (waterLevel >= 5 || riskScore >= 15) return 'critical';
+  if (waterLevel >= 3 || riskScore >= 10) return 'high';
+  if (waterLevel >= 2 || riskScore >= 6) return 'medium';
+  return 'low';
+}
+
 export default function SosRequestForm({ onSubmitted }: { onSubmitted: (phone: string) => void }) {
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
@@ -55,7 +92,6 @@ export default function SosRequestForm({ onSubmitted }: { onSubmitted: (phone: s
   const [loadingDistricts, setLoadingDistricts] = useState(false);
   const [loadingSubDistricts, setLoadingSubDistricts] = useState(false);
   const [waterLevel, setWaterLevel] = useState(1);
-  const [urgencyLevel, setUrgencyLevel] = useState('medium');
   const [adultCount, setAdultCount] = useState(1);
   const [childCount, setChildCount] = useState(0);
   const [elderCount, setElderCount] = useState(0);
@@ -179,6 +215,15 @@ export default function SosRequestForm({ onSubmitted }: { onSubmitted: (phone: s
     setSubmitting(true);
 
     try {
+      const urgencyLevel = calculateUrgency({
+        waterLevel,
+        adultCount,
+        childCount,
+        elderCount,
+        specialNeeds,
+        neededItems,
+      });
+
       const { data, error } = await supabase
         .from('sos_reports')
         .insert([{
@@ -262,13 +307,12 @@ export default function SosRequestForm({ onSubmitted }: { onSubmitted: (phone: s
         <section className="sos-panel">
           <PanelHeading number="03" title="รายละเอียดสถานการณ์" description="ข้อมูลนี้ช่วยให้เจ้าหน้าที่เตรียมกำลังคนและอุปกรณ์ได้เหมาะสม" />
           <Field label="ระดับน้ำโดยประมาณ"><div className="sos-choice-grid five">{[1, 2, 3, 4, 5].map((level) => <button type="button" className={waterLevel === level ? 'selected' : ''} key={level} onClick={() => setWaterLevel(level)}><strong>{level}</strong><small>เมตร</small></button>)}</div></Field>
-          <Field label="ระดับความเร่งด่วน"><div className="sos-choice-grid three">{[{ key: 'low', label: 'ทั่วไป', detail: 'ยังปลอดภัย' }, { key: 'medium', label: 'เร่งด่วน', detail: 'ต้องการความช่วยเหลือ' }, { key: 'high', label: 'วิกฤต', detail: 'มีความเสี่ยงสูง' }].map((item) => <button type="button" className={urgencyLevel === item.key ? 'selected' : ''} key={item.key} onClick={() => setUrgencyLevel(item.key)}><strong>{item.label}</strong><small>{item.detail}</small></button>)}</div></Field>
           <Field label="จำนวนผู้ประสบภัย"><div className="sos-people-list"><Counter label="ผู้ใหญ่" value={adultCount} setValue={setAdultCount} /><Counter label="เด็ก" value={childCount} setValue={setChildCount} /><Counter label="ผู้สูงอายุ" value={elderCount} setValue={setElderCount} /></div></Field>
           <Field label="สิ่งของบรรเทาทุกข์ที่ต้องการ"><div className="sos-chip-list">{AVAILABLE_ITEMS.map((item) => <button type="button" className={neededItems.includes(item) ? 'selected' : ''} key={item} onClick={() => toggleItem(item)}>{neededItems.includes(item) && <Check size={13} />}{item}</button>)}</div></Field>
           <div className="sos-custom-item"><PackageOpen size={17} /><input value={customItem} onChange={(event) => setCustomItem(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addCustomItem(); } }} placeholder="เพิ่มสิ่งของอื่น ๆ" /><button type="button" onClick={addCustomItem}>เพิ่ม</button></div>
           {neededItems.some((item) => !AVAILABLE_ITEMS.includes(item)) && <div className="sos-custom-chips">{neededItems.filter((item) => !AVAILABLE_ITEMS.includes(item)).map((item) => <span key={item}>{item}<button type="button" onClick={() => toggleItem(item)} aria-label={`ลบ ${item}`}><X size={12} /></button></span>)}</div>}
           <Field label="ความต้องการพิเศษหรือหมายเหตุ"><textarea rows={3} value={specialNeeds} onChange={(event) => setSpecialNeeds(event.target.value)} placeholder="เช่น มีผู้ป่วยติดเตียง ผู้พิการ หญิงตั้งครรภ์ หรือยาที่จำเป็น" /></Field>
-          <div className="sos-submit-note"><Send size={17} /><span><strong>ตรวจสอบข้อมูลก่อนส่ง</strong><small>หลังส่งแล้วสามารถติดตามสถานะด้วยเบอร์โทรนี้ได้ทันที</small></span></div>
+          <div className="sos-submit-note"><Send size={17} /><span><strong>ระบบจะประเมินความเร่งด่วนให้อัตโนมัติ</strong><small>ประเมินจากระดับน้ำ จำนวนผู้ประสบภัย กลุ่มเปราะบาง และความต้องการพิเศษ</small></span></div>
           <div className="sos-button-row"><button className="sos-secondary-button" type="button" onClick={() => setStep(2)}><ArrowLeft size={15} /> ย้อนกลับ</button><button className="sos-primary-button" type="submit" disabled={submitting}>{submitting ? 'กำลังส่งข้อมูล...' : 'ส่งคำขอความช่วยเหลือ'} <Send size={15} /></button></div>
         </section>
       )}

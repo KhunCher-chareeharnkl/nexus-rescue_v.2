@@ -1,8 +1,37 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import {
+  Accessibility,
+  AlertCircle,
+  BarChart3,
+  Building2,
+  CheckCircle2,
+  Clock3,
+  Footprints,
+  History,
+  Home,
+  LayoutDashboard,
+  LogOut,
+  MapPin,
+  Plus,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  Truck,
+  UserRound,
+  Users,
+  X,
+} from 'lucide-react';
+import { PROJECT_NAME } from '@/lib/brand';
 import { supabase } from '@/lib/supabase';
+import styles from './page.module.css';
+
+type ChartRange = 'day' | 'week' | 'month';
+type OccupantTab = 'in_shelter' | 'exited';
+type Notice = { type: 'success' | 'error'; message: string } | null;
+type RealtimeState = 'connecting' | 'live' | 'offline';
 
 interface Profile {
   id: string;
@@ -14,21 +43,9 @@ interface Profile {
 interface Shelter {
   id: string;
   name: string;
-  address?: string;
-  province?: string;
-  capacity?: number;
-}
-
-interface OccupancySummary {
-  shelter_id: string;
-  name: string;
-  capacity: number | null;
-  current_total: number;
-  current_adults: number;
-  current_children: number;
-  current_elders: number;
-  from_rescuer: number;
-  self_registered: number;
+  address?: string | null;
+  province?: string | null;
+  capacity?: number | null;
 }
 
 interface Occupant {
@@ -39,12 +56,14 @@ interface Occupant {
   child_count: number;
   elder_count: number;
   entry_source: 'rescuer' | 'self_registered';
-  status: 'in_shelter' | 'exited';
+  status: OccupantTab;
   entry_date: string;
   exit_date?: string | null;
-  exit_destination?: string | null;
+  exit_destination?: ExitDestination | null;
   exit_note?: string | null;
 }
+
+type ExitDestination = 'home' | 'relative_home' | 'other_shelter' | 'other';
 
 interface AddDraft {
   fullName: string;
@@ -57,412 +76,664 @@ interface AddDraft {
 interface ExitDraft {
   occupantId: string;
   fullName: string;
-  destination: 'home' | 'relative_home' | 'other_shelter' | 'other' | null;
+  destination: ExitDestination | null;
   note: string;
-  exitDate: string; // yyyy-mm-dd จาก <input type="date">
+  exitDate: string;
+  exitTime: string;
 }
 
-const EXIT_LABEL: Record<string, string> = {
-  home: '🏠 กลับบ้าน',
-  relative_home: '👨‍👩‍👧 บ้านญาติ',
-  other_shelter: '🏕️ ย้ายศูนย์อื่น',
-  other: '📍 อื่นๆ',
+interface ChartBucket {
+  key: string;
+  label: string;
+  detail: string;
+  rescuer: number;
+  self: number;
+  home: number;
+}
+
+const EXIT_LABEL: Record<ExitDestination, string> = {
+  home: 'กลับบ้าน',
+  relative_home: 'บ้านญาติ',
+  other_shelter: 'ย้ายศูนย์อื่น',
+  other: 'ปลายทางอื่น',
 };
+
+const RANGE_OPTIONS: ReadonlyArray<{ value: ChartRange; label: string }> = [
+  { value: 'day', label: '1 วัน' },
+  { value: 'week', label: '1 สัปดาห์' },
+  { value: 'month', label: '1 เดือน' },
+];
+
+const EMPTY_ADD_DRAFT: AddDraft = { fullName: '', phone: '', adult: 1, child: 0, elder: 0 };
 
 export default function ShelterStaffDashboard() {
   const router = useRouter();
-  const params = useParams();
-  const shelterIdFromUrl = params?.shelterId as string;
+  const params = useParams<{ shelterId: string }>();
+  const shelterId = params?.shelterId;
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [shelter, setShelter] = useState<Shelter | null>(null);
-  const [summary, setSummary] = useState<OccupancySummary | null>(null);
   const [occupants, setOccupants] = useState<Occupant[]>([]);
-  const [tab, setTab] = useState<'in_shelter' | 'exited'>('in_shelter');
+  const [tab, setTab] = useState<OccupantTab>('in_shelter');
+  const [activeSection, setActiveSection] = useState<'overview' | 'activity'>('overview');
+  const [chartRange, setChartRange] = useState<ChartRange>('week');
+  const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
-
+  const [dataError, setDataError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [realtimeState, setRealtimeState] = useState<RealtimeState>('connecting');
   const [showAddForm, setShowAddForm] = useState(false);
-  const [addDraft, setAddDraft] = useState<AddDraft>({ fullName: '', phone: '', adult: 1, child: 0, elder: 0 });
-
+  const [addDraft, setAddDraft] = useState<AddDraft>(EMPTY_ADD_DRAFT);
   const [exitDraft, setExitDraft] = useState<ExitDraft | null>(null);
 
-  // ── ตรวจสิทธิ์: ต้อง login และเป็น shelter_staff/admin ของศูนย์นี้เท่านั้น ──
   useEffect(() => {
-    const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { router.push('/officer/login'); return; }
+    let active = true;
 
-      const { data: prof } = await supabase
-        .from('profiles').select('*').eq('id', user.id).single();
+    const authenticate = async () => {
+      try {
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (userError) throw userError;
+        if (!user) {
+          router.replace(`/officer/login?redirect=${encodeURIComponent(`/officer/shelter/${shelterId}`)}`);
+          return;
+        }
 
-      if (!prof) { router.push('/officer/login'); return; }
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id, full_name, role, shelter_id')
+          .eq('id', user.id)
+          .maybeSingle();
+        if (error) throw error;
+        if (!data) {
+          router.replace('/officer/login');
+          return;
+        }
 
-      if (prof.role === 'rescuer') { router.push('/officer/dashboard'); return; }
-      if (prof.role === 'admin') { /* แอดมินดูได้ทุกศูนย์ */ }
-      else if (prof.role === 'shelter_staff' && prof.shelter_id !== shelterIdFromUrl) {
-        // เจ้าหน้าที่ศูนย์คนนี้ผูกกับศูนย์อื่น ไม่ใช่ศูนย์ตาม URL
-        router.push(`/officer/shelter/${prof.shelter_id}`);
-        return;
+        const userProfile = data as Profile;
+        if (userProfile.role === 'rescuer') {
+          router.replace('/officer/dashboard');
+          return;
+        }
+        if (userProfile.role !== 'admin' && userProfile.role !== 'shelter_staff') {
+          router.replace('/officer/login');
+          return;
+        }
+        if (userProfile.role === 'shelter_staff' && userProfile.shelter_id !== shelterId) {
+          if (userProfile.shelter_id) router.replace(`/officer/shelter/${userProfile.shelter_id}`);
+          else router.replace('/officer/login');
+          return;
+        }
+
+        if (active) setProfile(userProfile);
+      } catch (error) {
+        if (active) {
+          setDataError(getErrorMessage(error, 'ไม่สามารถตรวจสอบสิทธิ์เข้าใช้งานได้'));
+          setLoading(false);
+        }
       }
-
-      setProfile(prof);
     };
-    init();
-  }, [router, shelterIdFromUrl]);
 
-  // ── โหลดข้อมูลศูนย์ + สรุปยอด + รายชื่อ ──
-  useEffect(() => {
-    if (!profile || !shelterIdFromUrl) return;
+    void authenticate();
+    return () => { active = false; };
+  }, [router, shelterId]);
 
-    const fetchAll = async () => {
-      const { data: sh } = await supabase
-        .from('shelters').select('id, name, address, province, capacity')
-        .eq('id', shelterIdFromUrl).single();
-      setShelter(sh);
+  const loadDashboard = useCallback(async (manual = false) => {
+    if (!shelterId) return;
+    if (manual) setRefreshing(true);
 
-      const { data: sum } = await supabase
-        .from('shelter_occupancy_summary').select('*')
-        .eq('shelter_id', shelterIdFromUrl).single();
-      setSummary(sum);
+    try {
+      const [shelterResult, occupantsResult] = await Promise.all([
+        supabase
+          .from('shelters')
+          .select('id, name, address, province, capacity')
+          .eq('id', shelterId)
+          .maybeSingle(),
+        supabase
+          .from('shelter_occupants')
+          .select('id, full_name, phone, adult_count, child_count, elder_count, entry_source, status, entry_date, exit_date, exit_destination, exit_note')
+          .eq('shelter_id', shelterId)
+          .order('entry_date', { ascending: false }),
+      ]);
 
-      const { data: occ } = await supabase
-        .from('shelter_occupants').select('*')
-        .eq('shelter_id', shelterIdFromUrl)
-        .order('entry_date', { ascending: false });
-      setOccupants((occ as Occupant[]) ?? []);
+      if (shelterResult.error) throw shelterResult.error;
+      if (!shelterResult.data) throw new Error('ไม่พบข้อมูลศูนย์พักพิงนี้');
+      if (occupantsResult.error) throw occupantsResult.error;
 
+      setShelter(shelterResult.data as Shelter);
+      setOccupants((occupantsResult.data as Occupant[] | null) ?? []);
+      setLastUpdated(new Date());
+      setDataError(null);
+      if (manual) setNotice({ type: 'success', message: 'อัปเดตข้อมูลล่าสุดแล้ว' });
+    } catch (error) {
+      const message = getErrorMessage(error, 'โหลดข้อมูลศูนย์พักพิงไม่สำเร็จ');
+      setDataError(message);
+      if (manual) setNotice({ type: 'error', message });
+    } finally {
       setLoading(false);
-    };
-    fetchAll();
-
-    // realtime: อัปเดตทันทีเมื่อกู้ภัยพาคนมาส่ง หรือมีการเพิ่ม/ยืนยันคนออก
-    const channel = supabase.channel(`shelter_occupants_${shelterIdFromUrl}`)
-      .on('postgres_changes' as any,
-        { event: '*', schema: 'public', table: 'shelter_occupants', filter: `shelter_id=eq.${shelterIdFromUrl}` },
-        () => { fetchAll(); }
-      ).subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, [profile, shelterIdFromUrl]);
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push('/');
-  };
-
-  // ── เพิ่มผู้ลี้ภัยที่มาลงทะเบียนเอง (ไม่ผ่านกู้ภัย) ──
-  const submitAddOccupant = async () => {
-    if (!profile || !addDraft.fullName.trim()) {
-      alert('กรุณากรอกชื่อ-นามสกุล'); return;
+      setRefreshing(false);
     }
+  }, [shelterId]);
+
+  useEffect(() => {
+    if (!profile) return;
+    const initialLoad = window.setTimeout(() => { void loadDashboard(); }, 0);
+
+    const channel = supabase
+      .channel(`shelter-dashboard-${shelterId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'shelter_occupants', filter: `shelter_id=eq.${shelterId}` },
+        () => { void loadDashboard(); },
+      )
+      .subscribe(status => {
+        if (status === 'SUBSCRIBED') setRealtimeState('live');
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') setRealtimeState('offline');
+        else setRealtimeState('connecting');
+      });
+
+    return () => {
+      window.clearTimeout(initialLoad);
+      void supabase.removeChannel(channel);
+    };
+  }, [loadDashboard, profile, shelterId]);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 3500);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  useEffect(() => {
+    if (!showAddForm && !exitDraft) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || saving) return;
+      setShowAddForm(false);
+      setExitDraft(null);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [exitDraft, saving, showAddForm]);
+
+  useEffect(() => {
+    if (loading) return;
+    const sections = ['overview', 'activity']
+      .map(id => document.getElementById(id))
+      .filter((element): element is HTMLElement => Boolean(element));
+    const observer = new IntersectionObserver(entries => {
+      const visible = entries
+        .filter(entry => entry.isIntersecting)
+        .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+      if (visible?.target.id === 'overview' || visible?.target.id === 'activity') setActiveSection(visible.target.id);
+    }, { rootMargin: '-90px 0px -48% 0px', threshold: [0, .2, .5] });
+    sections.forEach(section => observer.observe(section));
+    return () => observer.disconnect();
+  }, [loading]);
+
+  const currentOccupants = useMemo(() => occupants.filter(item => item.status === 'in_shelter'), [occupants]);
+  const currentStats = useMemo(() => currentOccupants.reduce(
+    (total, item) => ({
+      people: total.people + getMemberTotal(item),
+      adults: total.adults + item.adult_count,
+      children: total.children + item.child_count,
+      elders: total.elders + item.elder_count,
+      rescuer: total.rescuer + (item.entry_source === 'rescuer' ? getMemberTotal(item) : 0),
+      self: total.self + (item.entry_source === 'self_registered' ? getMemberTotal(item) : 0),
+    }),
+    { people: 0, adults: 0, children: 0, elders: 0, rescuer: 0, self: 0 },
+  ), [currentOccupants]);
+
+  const capacity = Math.max(0, Number(shelter?.capacity ?? 0));
+  const hasCapacity = capacity > 0;
+  const capacityRate = hasCapacity ? Math.min(100, Math.round((currentStats.people / capacity) * 100)) : 0;
+  const remainingCapacity = hasCapacity ? Math.max(capacity - currentStats.people, 0) : null;
+  const chartData = useMemo(() => buildChartData(occupants, chartRange), [chartRange, occupants]);
+  const chartMaximum = Math.max(4, ...chartData.map(bucket => bucket.rescuer + bucket.self + bucket.home));
+  const chartHasData = chartData.some(bucket => bucket.rescuer + bucket.self + bucket.home > 0);
+  const chartTotals = chartData.reduce(
+    (total, bucket) => ({ rescuer: total.rescuer + bucket.rescuer, self: total.self + bucket.self, home: total.home + bucket.home }),
+    { rescuer: 0, self: 0, home: 0 },
+  );
+
+  const filteredOccupants = useMemo(() => {
+    const keyword = search.trim().toLocaleLowerCase('th-TH');
+    return occupants
+      .filter(item => item.status === tab)
+      .filter(item => !keyword || item.full_name.toLocaleLowerCase('th-TH').includes(keyword) || item.phone?.includes(keyword))
+      .sort((a, b) => {
+        const aTime = new Date(tab === 'exited' ? (a.exit_date ?? a.entry_date) : a.entry_date).getTime();
+        const bTime = new Date(tab === 'exited' ? (b.exit_date ?? b.entry_date) : b.entry_date).getTime();
+        return bTime - aTime;
+      });
+  }, [occupants, search, tab]);
+
+  const submitAddOccupant = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!profile || saving) return;
+
+    const fullName = addDraft.fullName.trim();
+    const counts = [addDraft.adult, addDraft.child, addDraft.elder].map(value => Math.max(0, Math.floor(Number(value) || 0)));
+    if (!fullName) {
+      setNotice({ type: 'error', message: 'กรุณากรอกชื่อผู้ลงทะเบียน' });
+      return;
+    }
+    if (counts.reduce((sum, value) => sum + value, 0) < 1) {
+      setNotice({ type: 'error', message: 'จำนวนผู้เข้าพักต้องมีอย่างน้อย 1 คน' });
+      return;
+    }
+
     setSaving(true);
     try {
       const { error } = await supabase.from('shelter_occupants').insert({
-        shelter_id: shelterIdFromUrl,
-        full_name: addDraft.fullName.trim(),
+        shelter_id: shelterId,
+        full_name: fullName,
         phone: addDraft.phone.trim() || null,
-        adult_count: addDraft.adult,
-        child_count: addDraft.child,
-        elder_count: addDraft.elder,
+        adult_count: counts[0],
+        child_count: counts[1],
+        elder_count: counts[2],
         entry_source: 'self_registered',
+        status: 'in_shelter',
+        entry_date: new Date().toISOString(),
         registered_by: profile.id,
       });
       if (error) throw error;
-
-      setAddDraft({ fullName: '', phone: '', adult: 1, child: 0, elder: 0 });
+      setAddDraft(EMPTY_ADD_DRAFT);
       setShowAddForm(false);
-    } catch (err: any) {
-      alert(`เพิ่มรายชื่อไม่สำเร็จ: ${err.message}`);
+      setNotice({ type: 'success', message: `เพิ่ม ${fullName} เข้าศูนย์แล้ว` });
+      await loadDashboard();
+    } catch (error) {
+      setNotice({ type: 'error', message: getErrorMessage(error, 'เพิ่มรายชื่อไม่สำเร็จ') });
     } finally {
       setSaving(false);
     }
   };
 
-  // ── ยืนยันคนออกจากศูนย์ ──
-  const submitExit = async () => {
-    if (!exitDraft || !exitDraft.destination) {
-      alert('กรุณาเลือกว่าออกไปที่ไหน'); return;
+  const submitExit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!exitDraft || saving) return;
+    if (!exitDraft.destination) {
+      setNotice({ type: 'error', message: 'กรุณาเลือกปลายทางหลังออกจากศูนย์' });
+      return;
     }
-    if (!exitDraft.exitDate) {
-      alert('กรุณาเลือกวันที่ออก'); return;
+
+    const exitDateTime = parseLocalDateTime(exitDraft.exitDate, exitDraft.exitTime);
+    if (!exitDateTime) {
+      setNotice({ type: 'error', message: 'กรุณาระบุวันที่และเวลาออกให้ถูกต้อง' });
+      return;
     }
+    if (exitDateTime.getTime() > Date.now() + 60_000) {
+      setNotice({ type: 'error', message: 'เวลาออกต้องไม่เกินเวลาปัจจุบัน' });
+      return;
+    }
+
     setSaving(true);
     try {
-      // ใช้เวลาเที่ยงวันของวันที่เลือก กัน timezone แปลงแล้ววันเพี้ยนไป 1 วัน
-      const exitDateTime = new Date(`${exitDraft.exitDate}T12:00:00`).toISOString();
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('shelter_occupants')
         .update({
           status: 'exited',
-          exit_date: exitDateTime,
+          exit_date: exitDateTime.toISOString(),
           exit_destination: exitDraft.destination,
-          exit_note: exitDraft.note || null,
+          exit_note: exitDraft.note.trim() || null,
         })
-        .eq('id', exitDraft.occupantId);
+        .eq('id', exitDraft.occupantId)
+        .eq('status', 'in_shelter')
+        .select('id')
+        .maybeSingle();
       if (error) throw error;
+      if (!data) throw new Error('รายการนี้ถูกดำเนินการไปแล้ว กรุณารีเฟรชข้อมูล');
+
+      const name = exitDraft.fullName;
       setExitDraft(null);
-    } catch (err: any) {
-      alert(`บันทึกไม่สำเร็จ: ${err.message}`);
+      setNotice({ type: 'success', message: `ยืนยันการออกของ ${name} แล้ว` });
+      await loadDashboard();
+    } catch (error) {
+      setNotice({ type: 'error', message: getErrorMessage(error, 'บันทึกการออกไม่สำเร็จ') });
     } finally {
       setSaving(false);
     }
   };
 
-  const filteredOccupants = occupants.filter(o => o.status === tab);
+  const openExitDialog = (occupant: Occupant) => {
+    const now = new Date();
+    setExitDraft({
+      occupantId: occupant.id,
+      fullName: occupant.full_name,
+      destination: null,
+      note: '',
+      exitDate: toLocalDateInput(now),
+      exitTime: toLocalTimeInput(now),
+    });
+  };
 
-  if (loading) return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Sarabun',sans-serif", color: '#6B7280' }}>
-      กำลังโหลด...
-    </div>
-  );
+  const scrollToSection = (sectionId: 'overview' | 'activity', nextTab?: OccupantTab) => {
+    setActiveSection(sectionId);
+    if (nextTab) setTab(nextTab);
+    document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.replace('/');
+  };
+
+  if (loading) return <DashboardSkeleton />;
+
+  if (dataError && !shelter) {
+    return (
+      <main className={styles.fatalState}>
+        <span><AlertCircle size={28} /></span>
+        <h1>เปิดหน้าแดชบอร์ดไม่ได้</h1>
+        <p>{dataError}</p>
+        <button onClick={() => window.location.reload()}><RefreshCw size={17} /> ลองอีกครั้ง</button>
+      </main>
+    );
+  }
 
   return (
-    <>
-      <style>{`* { box-sizing: border-box; margin: 0; padding: 0; }`}</style>
+    <div className={styles.shell}>
+      <aside className={styles.rail} aria-label="เมนูศูนย์พักพิง">
+        <button className={styles.railBrand} onClick={() => scrollToSection('overview')} aria-label="กลับไปด้านบน"><ShieldCheck size={23} /></button>
+        <nav>
+          <button className={activeSection === 'overview' ? styles.railActive : ''} onClick={() => scrollToSection('overview')} aria-label="ภาพรวม"><LayoutDashboard size={19} /><span>ภาพรวม</span></button>
+          <button className={activeSection === 'activity' && tab === 'in_shelter' ? styles.railActive : ''} onClick={() => scrollToSection('activity', 'in_shelter')} aria-label="ผู้พักพิงปัจจุบัน"><Users size={19} /><span>ผู้พักพิง</span></button>
+          <button className={activeSection === 'activity' && tab === 'exited' ? styles.railActive : ''} onClick={() => scrollToSection('activity', 'exited')} aria-label="ประวัติการออก"><History size={19} /><span>ประวัติ</span></button>
+        </nav>
+        <button className={styles.logoutButton} onClick={handleLogout} aria-label="ออกจากระบบ"><LogOut size={19} /><span>ออกจากระบบ</span></button>
+      </aside>
 
-      <div style={{ minHeight: '100vh', background: '#F0F2FA', fontFamily: "'Sarabun',sans-serif" }}>
-
-        {/* Header */}
-        <header style={{ background: '#fff', borderBottom: '1px solid #ECEEF5', padding: '14px 20px', position: 'sticky', top: 0, zIndex: 50 }}>
-          <div style={{ maxWidth: 960, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 40, height: 40, borderRadius: 11, background: 'linear-gradient(135deg,#6D5EF9,#5046e5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>
-                🏠
-              </div>
-              <div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: '#111827' }}>{shelter?.name ?? 'ศูนย์พักพิง'}</div>
-                <div style={{ fontSize: 11, color: '#9CA3AF' }}>{profile?.full_name}</div>
-              </div>
+      <div className={styles.workspace}>
+        <header className={styles.topbar}>
+          <div className={styles.shelterIdentity}>
+            <span><Building2 size={20} /></span>
+            <div><strong>{shelter?.name ?? 'ศูนย์พักพิง'}</strong><small>{PROJECT_NAME}</small></div>
+          </div>
+          <div className={styles.topbarActions}>
+            <div className={`${styles.syncStatus} ${styles[realtimeState]}`}><i />{realtimeState === 'live' ? 'ข้อมูลสด' : realtimeState === 'connecting' ? 'กำลังเชื่อมต่อ' : 'ออฟไลน์'}</div>
+            <button className={styles.refreshButton} onClick={() => void loadDashboard(true)} disabled={refreshing} aria-label="รีเฟรชข้อมูล"><RefreshCw className={refreshing ? styles.spinning : ''} size={17} /></button>
+            <div className={styles.profileBlock}>
+              <div><strong>{profile?.full_name || 'เจ้าหน้าที่'}</strong><small>{profile?.role === 'admin' ? 'ผู้ดูแลระบบ' : 'เจ้าหน้าที่ศูนย์พักพิง'}</small></div>
+              <span>{getInitial(profile?.full_name)}</span>
             </div>
-            <button onClick={handleLogout} style={{ padding: '7px 14px', borderRadius: 10, border: '1px solid #ECEEF5', background: '#fff', fontSize: 13, fontWeight: 600, color: '#6B7280', cursor: 'pointer' }}>
-              ออกจากระบบ
-            </button>
           </div>
         </header>
 
-        <main style={{ maxWidth: 960, margin: '0 auto', padding: '20px' }}>
+        <main className={styles.main}>
+          {dataError && <div className={styles.inlineError}><AlertCircle size={17} /><span>{dataError}</span><button onClick={() => void loadDashboard(true)}>ลองใหม่</button></div>}
 
-          {/* ── สรุปยอด ── */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 20 }}>
-            <SummaryCard label="อยู่ในศูนย์ทั้งหมด" value={summary?.current_total ?? 0} color="#5046e5" big />
-            <SummaryCard label="ผู้ใหญ่" value={summary?.current_adults ?? 0} color="#374151" />
-            <SummaryCard label="เด็ก" value={summary?.current_children ?? 0} color="#F59E0B" />
-            <SummaryCard label="สูงอายุ" value={summary?.current_elders ?? 0} color="#7C3AED" />
-          </div>
+          <section className={styles.hero} id="overview">
+            <div>
+              <span className={styles.eyebrow}>SHELTER OPERATIONS</span>
+              <h1>ภาพรวมศูนย์พักพิง</h1>
+              <p><MapPin size={14} /> {shelter?.address || shelter?.province || 'ยังไม่ได้ระบุที่อยู่ศูนย์พักพิง'}</p>
+            </div>
+            <div className={styles.heroActions}>
+              <span>{lastUpdated ? `อัปเดต ${formatRelativeUpdate(lastUpdated)}` : 'กำลังรอข้อมูลล่าสุด'}</span>
+              <button onClick={() => setShowAddForm(true)}><Plus size={18} /> เพิ่มผู้ลงทะเบียน</button>
+            </div>
+          </section>
 
-          <div style={{ display: 'flex', gap: 10, marginBottom: 20, fontSize: 12, color: '#6B7280' }}>
-            <span>🚑 กู้ภัยพามา {summary?.from_rescuer ?? 0} คน</span>
-            <span>·</span>
-            <span>🚶 มาลงทะเบียนเอง {summary?.self_registered ?? 0} คน</span>
-            {shelter?.capacity ? (
-              <>
-                <span>·</span>
-                <span>ความจุ {shelter.capacity} คน</span>
-              </>
-            ) : null}
-          </div>
+          <section className={styles.statGrid} aria-label="จำนวนผู้พักพิงปัจจุบัน">
+            <StatCard icon={<Users size={20} />} label="อยู่ในศูนย์ทั้งหมด" value={currentStats.people} detail={`${currentOccupants.length} รายการ`} tone="blue" />
+            <StatCard icon={<UserRound size={20} />} label="ผู้ใหญ่" value={currentStats.adults} detail={getPercentageLabel(currentStats.adults, currentStats.people)} />
+            <StatCard icon={<Footprints size={20} />} label="เด็ก" value={currentStats.children} detail={getPercentageLabel(currentStats.children, currentStats.people)} tone="light" />
+            <StatCard icon={<Accessibility size={20} />} label="ผู้สูงอายุ" value={currentStats.elders} detail={getPercentageLabel(currentStats.elders, currentStats.people)} tone="navy" />
+          </section>
 
-          {/* ── ปุ่มเพิ่มผู้ลี้ภัยที่มาเอง ── */}
-          <button
-            onClick={() => setShowAddForm(v => !v)}
-            style={{
-              width: '100%', padding: '13px', borderRadius: 14, border: 'none',
-              background: showAddForm ? '#E5E7EB' : 'linear-gradient(135deg,#6D5EF9,#5046e5)',
-              color: showAddForm ? '#374151' : '#fff', fontSize: 14, fontWeight: 700,
-              cursor: 'pointer', marginBottom: showAddForm ? 12 : 20,
-            }}
-          >
-            {showAddForm ? '✕ ยกเลิก' : '+ เพิ่มผู้ลี้ภัยที่มาลงทะเบียนเอง'}
-          </button>
-
-          {showAddForm && (
-            <div style={{ background: '#fff', borderRadius: 16, padding: 16, marginBottom: 20, border: '1px solid #ECEEF5' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <input
-                  placeholder="ชื่อ-นามสกุล *" value={addDraft.fullName}
-                  onChange={e => setAddDraft({ ...addDraft, fullName: e.target.value })}
-                  style={inputStyle}
-                />
-                <input
-                  placeholder="เบอร์โทร" value={addDraft.phone}
-                  onChange={e => setAddDraft({ ...addDraft, phone: e.target.value })}
-                  style={inputStyle}
-                />
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                  {(['adult', 'child', 'elder'] as const).map((key, i) => (
-                    <div key={key}>
-                      <div style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 4 }}>
-                        {['ผู้ใหญ่', 'เด็ก', 'สูงอายุ'][i]}
-                      </div>
-                      <input
-                        type="number" min={0} value={addDraft[key]}
-                        onChange={e => setAddDraft({ ...addDraft, [key]: Number(e.target.value) })}
-                        style={inputStyle}
-                      />
-                    </div>
-                  ))}
+          <div className={styles.overviewGrid}>
+            <section className={styles.chartPanel}>
+              <div className={styles.panelHeader}>
+                <div className={styles.panelTitle}>
+                  <span><BarChart3 size={19} /></span>
+                  <div><small>FLOW OVERVIEW</small><h2>ภาพรวมการเข้า–ออกศูนย์</h2><p>จำนวนคน แยกตามช่องทางและช่วงเวลาที่เกิดขึ้นจริง</p></div>
                 </div>
-                <button
-                  onClick={submitAddOccupant} disabled={saving}
-                  style={{ padding: '12px', borderRadius: 12, border: 'none', background: '#111827', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
-                >
-                  {saving ? 'กำลังบันทึก...' : 'บันทึกรายชื่อ'}
-                </button>
+                <div className={styles.rangeSwitch} aria-label="เลือกช่วงเวลาของกราฟ">
+                  {RANGE_OPTIONS.map(option => <button key={option.value} className={chartRange === option.value ? styles.rangeActive : ''} onClick={() => setChartRange(option.value)}>{option.label}</button>)}
+                </div>
+              </div>
+
+              <div className={styles.chartLegendRow}>
+                <ChartLegend tone="rescuer" label="กู้ภัยพามา" value={chartTotals.rescuer} />
+                <ChartLegend tone="self" label="เดินทางมาเอง" value={chartTotals.self} />
+                <ChartLegend tone="home" label="กลับบ้าน" value={chartTotals.home} />
+              </div>
+
+              <div className={styles.chartCanvas}>
+                <div className={styles.yAxis} aria-hidden="true"><span>{chartMaximum}</span><span>{Math.round(chartMaximum * .66)}</span><span>{Math.round(chartMaximum * .33)}</span><span>0</span></div>
+                <div className={styles.plotArea} role="img" aria-label="กราฟแท่งแสดงจำนวนผู้เข้าศูนย์และผู้กลับบ้าน">
+                  <div className={styles.gridLines}><i /><i /><i /><i /></div>
+                  {chartData.map(bucket => {
+                    const total = bucket.rescuer + bucket.self + bucket.home;
+                    return (
+                      <div className={styles.chartColumn} key={bucket.key}>
+                        <div className={styles.chartTooltip}><strong>{bucket.detail}</strong><span><i className={styles.dotRescuer} />กู้ภัยพามา <b>{bucket.rescuer}</b></span><span><i className={styles.dotSelf} />เดินทางมาเอง <b>{bucket.self}</b></span><span><i className={styles.dotHome} />กลับบ้าน <b>{bucket.home}</b></span></div>
+                        <button className={styles.chartBar} aria-label={`${bucket.detail} รวม ${total} คน`}>
+                          <i className={styles.barRescuer} style={{ height: `${bucket.rescuer / chartMaximum * 100}%` }} />
+                          <i className={styles.barSelf} style={{ height: `${bucket.self / chartMaximum * 100}%` }} />
+                          <i className={styles.barHome} style={{ height: `${bucket.home / chartMaximum * 100}%` }} />
+                        </button>
+                        <span>{bucket.label}</span>
+                      </div>
+                    );
+                  })}
+                  {!chartHasData && <div className={styles.chartEmpty}><BarChart3 size={21} /><span>ยังไม่มีรายการในช่วงเวลานี้</span></div>}
+                </div>
+              </div>
+            </section>
+
+            <aside className={styles.insightColumn}>
+              <section className={styles.capacityCard}>
+                <div className={styles.compactHeading}><div><small>CAPACITY</small><h2>ความจุศูนย์</h2></div><span className={hasCapacity && capacityRate >= 85 ? styles.capacityWarning : styles.capacityOkay}>{hasCapacity ? (capacityRate >= 100 ? 'เต็ม' : capacityRate >= 85 ? 'ใกล้เต็ม' : 'พร้อมรับ') : 'รอกำหนด'}</span></div>
+                <div className={`${styles.capacityRing} ${!hasCapacity ? styles.capacityUnknown : ''}`} style={{ '--rate': capacityRate } as React.CSSProperties}>
+                  <div><strong>{hasCapacity ? `${capacityRate}%` : '—'}</strong><span>{hasCapacity ? 'ใช้งานแล้ว' : 'ไม่พบความจุ'}</span></div>
+                </div>
+                <p><strong>{currentStats.people.toLocaleString('th-TH')}</strong> <span>/ {hasCapacity ? capacity.toLocaleString('th-TH') : '—'} คน</span></p>
+                <small>{remainingCapacity === null ? 'กรุณาให้แอดมินกำหนดความจุศูนย์' : remainingCapacity === 0 ? 'ไม่มีที่ว่างคงเหลือ' : `รองรับได้อีก ${remainingCapacity.toLocaleString('th-TH')} คน`}</small>
+              </section>
+
+              <section className={styles.sourceCard}>
+                <div className={styles.compactHeading}><div><small>REGISTRATION</small><h2>ที่มาของผู้พักพิง</h2></div></div>
+                <SourceRow icon={<Truck size={16} />} label="กู้ภัยพามา" value={currentStats.rescuer} total={currentStats.people} tone="blue" />
+                <SourceRow icon={<Footprints size={16} />} label="เดินทางมาเอง" value={currentStats.self} total={currentStats.people} tone="sky" />
+              </section>
+
+              <section className={styles.serviceCard}><span><CheckCircle2 size={19} /></span><div><strong>ศูนย์เปิดให้บริการ</strong><small>ระบบจะอัปเดตเมื่อมีการรับเข้าและยืนยันออก</small></div></section>
+            </aside>
+          </div>
+
+          <section className={styles.activityPanel} id="activity">
+            <div className={styles.activityHeader}>
+              <div className={styles.panelTitle}>
+                <span><Clock3 size={19} /></span>
+                <div><small>OCCUPANT ACTIVITY</small><h2>รายชื่อและเวลาเข้า–ออก</h2><p>ค้นหา ตรวจสอบ และยืนยันการออกจากศูนย์ในจุดเดียว</p></div>
+              </div>
+              <div className={styles.activityTools}>
+                <label className={styles.searchBox}><Search size={16} /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="ค้นหาชื่อหรือเบอร์โทร" /><span>{filteredOccupants.length}</span></label>
+                <div className={styles.tabs}>
+                  <button className={tab === 'in_shelter' ? styles.tabActive : ''} onClick={() => setTab('in_shelter')}>อยู่ในศูนย์ <b>{currentOccupants.length}</b></button>
+                  <button className={tab === 'exited' ? styles.tabActive : ''} onClick={() => setTab('exited')}>ออกแล้ว <b>{occupants.length - currentOccupants.length}</b></button>
+                </div>
               </div>
             </div>
-          )}
 
-          {/* ── Tabs ── */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-            <TabButton active={tab === 'in_shelter'} onClick={() => setTab('in_shelter')} label={`อยู่ในศูนย์ (${occupants.filter(o => o.status === 'in_shelter').length})`} />
-            <TabButton active={tab === 'exited'} onClick={() => setTab('exited')} label={`ออกแล้ว (${occupants.filter(o => o.status === 'exited').length})`} />
-          </div>
-
-          {/* ── รายชื่อ ── */}
-          {filteredOccupants.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '40px 0', color: '#9CA3AF', fontSize: 13 }}>
-              ไม่มีรายชื่อในหมวดนี้
+            <div className={styles.tableScroller}>
+              <div className={styles.tableHead}><span>ผู้พักพิง</span><span>ช่องทาง</span><span>มาถึงศูนย์</span><span>ออกจากศูนย์</span><span>สมาชิก</span><span>การจัดการ</span></div>
+              <div className={styles.activityList}>
+                {filteredOccupants.length === 0 ? (
+                  <div className={styles.emptyState}><span><Users size={24} /></span><strong>{search ? 'ไม่พบรายชื่อที่ค้นหา' : 'ยังไม่มีรายการในหมวดนี้'}</strong><small>{search ? 'ลองค้นหาด้วยชื่อหรือเบอร์โทรอื่น' : 'รายการใหม่จะแสดงพร้อมวันและเวลาโดยอัตโนมัติ'}</small></div>
+                ) : filteredOccupants.map(occupant => (
+                  <OccupantRow key={occupant.id} occupant={occupant} onExit={() => openExitDialog(occupant)} />
+                ))}
+              </div>
             </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {filteredOccupants.map(o => (
-                <div key={o.id} style={{ background: '#fff', borderRadius: 14, padding: 14, border: '1px solid #ECEEF5' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
-                    <div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>{o.full_name}</div>
-                      <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 2 }}>
-                        {o.phone ?? 'ไม่มีเบอร์โทร'} · ผู้ใหญ่ {o.adult_count} เด็ก {o.child_count} สูงอายุ {o.elder_count}
-                      </div>
-                      <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                        <span style={{
-                          fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
-                          background: o.entry_source === 'rescuer' ? '#EDE9FE' : '#F3F4F6',
-                          color: o.entry_source === 'rescuer' ? '#5B21B6' : '#374151',
-                        }}>
-                          {o.entry_source === 'rescuer' ? '🚑 กู้ภัยพามา' : '🚶 มาเอง'}
-                        </span>
-                        {o.status === 'exited' && o.exit_destination && (
-                          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#F3F4F6', color: '#374151' }}>
-                            {EXIT_LABEL[o.exit_destination] ?? o.exit_destination}
-                            {o.exit_date ? ` · ${new Date(o.exit_date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    {o.status === 'in_shelter' && (
-                      <button
-                        onClick={() => setExitDraft({
-                          occupantId: o.id, fullName: o.full_name, destination: null, note: '',
-                          exitDate: new Date().toISOString().slice(0, 10),
-                        })}
-                        style={{ padding: '8px 12px', borderRadius: 10, border: '1px solid #ECEEF5', background: '#fff', color: '#374151', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
-                      >
-                        ยืนยันคนออก
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          </section>
         </main>
       </div>
 
-      {/* ── Modal: ยืนยันคนออก ── */}
-      {exitDraft && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(17,24,39,0.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 100 }}>
-          <div style={{ background: '#fff', borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 480, padding: 20, fontFamily: "'Sarabun',sans-serif" }}>
-            <div style={{ fontSize: 16, fontWeight: 700, color: '#111827', marginBottom: 2 }}>ยืนยันคนออกจากศูนย์</div>
-            <div style={{ fontSize: 13, color: '#6B7280', marginBottom: 16 }}>{exitDraft.fullName}</div>
+      {notice && <div className={`${styles.toast} ${notice.type === 'error' ? styles.toastError : styles.toastSuccess}`} role="status">{notice.type === 'error' ? <AlertCircle size={18} /> : <CheckCircle2 size={18} />}<span>{notice.message}</span><button onClick={() => setNotice(null)} aria-label="ปิดข้อความ"><X size={16} /></button></div>}
 
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#374151', marginBottom: 8 }}>ออกวันไหน?</div>
-            <input
-              type="date"
-              value={exitDraft.exitDate}
-              max={new Date().toISOString().slice(0, 10)}
-              onChange={e => setExitDraft({ ...exitDraft, exitDate: e.target.value })}
-              style={{ ...inputStyle, marginBottom: 16 }}
-            />
-
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#374151', marginBottom: 8 }}>ออกไปที่ไหน?</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
-              {(['home', 'relative_home', 'other_shelter', 'other'] as const).map(dest => (
-                <button
-                  key={dest}
-                  onClick={() => setExitDraft({ ...exitDraft, destination: dest })}
-                  style={{
-                    padding: '10px', borderRadius: 10, fontFamily: 'inherit', cursor: 'pointer',
-                    border: exitDraft.destination === dest ? '2px solid #5046e5' : '1px solid #E5E7EB',
-                    background: exitDraft.destination === dest ? '#EEF2FF' : '#fff',
-                    color: '#374151', fontSize: 13, fontWeight: 700,
-                  }}
-                >
-                  {EXIT_LABEL[dest]}
-                </button>
-              ))}
-            </div>
-
-            <textarea
-              placeholder="รายละเอียดเพิ่มเติม (ถ้ามี)"
-              value={exitDraft.note}
-              onChange={e => setExitDraft({ ...exitDraft, note: e.target.value })}
-              rows={2}
-              style={{ ...inputStyle, width: '100%', resize: 'vertical', marginBottom: 16 }}
-            />
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              <button
-                onClick={() => setExitDraft(null)} disabled={saving}
-                style={{ padding: '13px', borderRadius: 12, border: '1px solid #E5E7EB', background: '#fff', color: '#6B7280', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
-              >
-                ยกเลิก
-              </button>
-              <button
-                onClick={submitExit} disabled={saving || !exitDraft.destination}
-                style={{
-                  padding: '13px', borderRadius: 12, border: 'none',
-                  background: !exitDraft.destination ? '#E5E7EB' : '#111827',
-                  color: '#fff', fontSize: 14, fontWeight: 700,
-                  cursor: saving || !exitDraft.destination ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
-                }}
-              >
-                {saving ? 'กำลังบันทึก...' : 'ยืนยัน'}
-              </button>
-            </div>
-          </div>
+      {showAddForm && (
+        <div className={styles.modalBackdrop} onMouseDown={event => { if (event.target === event.currentTarget && !saving) setShowAddForm(false); }}>
+          <section className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="add-title">
+            <button className={styles.modalClose} onClick={() => setShowAddForm(false)} disabled={saving} aria-label="ปิด"><X size={19} /></button>
+            <div className={styles.modalHeading}><span><Plus size={20} /></span><div><small>NEW OCCUPANT</small><h2 id="add-title">เพิ่มผู้ลงทะเบียน</h2><p>บันทึกผู้ที่เดินทางมายังศูนย์ด้วยตนเอง</p></div></div>
+            <form className={styles.form} onSubmit={submitAddOccupant}>
+              <label><span>ชื่อ–นามสกุล <b>*</b></span><input autoFocus value={addDraft.fullName} onChange={event => setAddDraft(current => ({ ...current, fullName: event.target.value }))} placeholder="กรอกชื่อผู้ลงทะเบียน" maxLength={120} /></label>
+              <label><span>เบอร์โทรศัพท์</span><input inputMode="tel" value={addDraft.phone} onChange={event => setAddDraft(current => ({ ...current, phone: event.target.value }))} placeholder="เช่น 0812345678" maxLength={20} /></label>
+              <fieldset><legend>จำนวนสมาชิก</legend><div className={styles.countGrid}>{(['adult', 'child', 'elder'] as const).map((key, index) => <label key={key}><span>{['ผู้ใหญ่', 'เด็ก', 'ผู้สูงอายุ'][index]}</span><input type="number" min={0} max={99} value={addDraft[key]} onChange={event => setAddDraft(current => ({ ...current, [key]: Number(event.target.value) }))} /></label>)}</div></fieldset>
+              <div className={styles.formSummary}><Users size={17} /><span>รวม <strong>{Math.max(0, addDraft.adult) + Math.max(0, addDraft.child) + Math.max(0, addDraft.elder)} คน</strong></span></div>
+              <div className={styles.modalActions}><button type="button" onClick={() => setShowAddForm(false)} disabled={saving}>ยกเลิก</button><button className={styles.primaryButton} type="submit" disabled={saving}>{saving ? <><RefreshCw className={styles.spinning} size={17} /> กำลังบันทึก</> : <><Plus size={17} /> เพิ่มเข้าศูนย์</>}</button></div>
+            </form>
+          </section>
         </div>
       )}
-    </>
-  );
-}
 
-const inputStyle: React.CSSProperties = {
-  padding: '10px 12px', borderRadius: 10, border: '1px solid #E5E7EB',
-  fontSize: 14, fontFamily: 'inherit', width: '100%',
-};
-
-function SummaryCard({ label, value, color, big }: { label: string; value: number; color: string; big?: boolean }) {
-  return (
-    <div style={{ background: '#fff', borderRadius: 14, padding: '14px 12px', border: '1px solid #ECEEF5', textAlign: 'center' }}>
-      <div style={{ fontSize: big ? 26 : 20, fontWeight: 800, color }}>{value}</div>
-      <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>{label}</div>
+      {exitDraft && (
+        <div className={styles.modalBackdrop} onMouseDown={event => { if (event.target === event.currentTarget && !saving) setExitDraft(null); }}>
+          <section className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="exit-title">
+            <button className={styles.modalClose} onClick={() => setExitDraft(null)} disabled={saving} aria-label="ปิด"><X size={19} /></button>
+            <div className={styles.modalHeading}><span><LogOut size={20} /></span><div><small>CHECK OUT</small><h2 id="exit-title">ยืนยันออกจากศูนย์</h2><p>{exitDraft.fullName}</p></div></div>
+            <form className={styles.form} onSubmit={submitExit}>
+              <div className={styles.dateGrid}><label><span>วันที่ออก <b>*</b></span><input type="date" max={toLocalDateInput(new Date())} value={exitDraft.exitDate} onChange={event => setExitDraft(current => current ? ({ ...current, exitDate: event.target.value }) : current)} /></label><label><span>เวลาออก <b>*</b></span><input type="time" value={exitDraft.exitTime} onChange={event => setExitDraft(current => current ? ({ ...current, exitTime: event.target.value }) : current)} /></label></div>
+              <fieldset><legend>เดินทางไปที่ใด <b>*</b></legend><div className={styles.destinationGrid}>{(Object.keys(EXIT_LABEL) as ExitDestination[]).map(destination => <button type="button" key={destination} className={exitDraft.destination === destination ? styles.destinationSelected : ''} onClick={() => setExitDraft(current => current ? ({ ...current, destination }) : current)}>{destination === 'home' && <Home size={16} />}{EXIT_LABEL[destination]}</button>)}</div></fieldset>
+              <label><span>รายละเอียดเพิ่มเติม</span><textarea rows={3} value={exitDraft.note} onChange={event => setExitDraft(current => current ? ({ ...current, note: event.target.value }) : current)} placeholder="เช่น ผู้มารับ หรือหมายเหตุการเดินทาง" maxLength={500} /></label>
+              <div className={styles.modalActions}><button type="button" onClick={() => setExitDraft(null)} disabled={saving}>ยกเลิก</button><button className={styles.primaryButton} type="submit" disabled={saving}>{saving ? <><RefreshCw className={styles.spinning} size={17} /> กำลังบันทึก</> : <><CheckCircle2 size={17} /> ยืนยันคนออก</>}</button></div>
+            </form>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
 
-function TabButton({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+function StatCard({ icon, label, value, detail, tone = 'default' }: { icon: React.ReactNode; label: string; value: number; detail: string; tone?: 'default' | 'blue' | 'light' | 'navy' }) {
+  return <article className={`${styles.statCard} ${styles[`stat_${tone}`]}`}><span>{icon}</span><div><small>{label}</small><strong>{value.toLocaleString('th-TH')}</strong><p>{detail}</p></div></article>;
+}
+
+function ChartLegend({ tone, label, value }: { tone: 'rescuer' | 'self' | 'home'; label: string; value: number }) {
+  return <div className={styles.legendItem}><i className={styles[`dot_${tone}`]} /><div><span>{label}</span><strong>{value.toLocaleString('th-TH')} คน</strong></div></div>;
+}
+
+function SourceRow({ icon, label, value, total, tone }: { icon: React.ReactNode; label: string; value: number; total: number; tone: 'blue' | 'sky' }) {
+  const rate = total > 0 ? Math.min(100, Math.round(value / total * 100)) : 0;
+  return <div className={styles.sourceRow}><div><span className={styles[`source_${tone}`]}>{icon}</span><strong>{label}</strong><b>{value.toLocaleString('th-TH')}</b></div><div className={styles.sourceTrack}><i className={styles[`fill_${tone}`]} style={{ width: `${rate}%` }} /></div><small>{rate}% ของผู้พักพิงปัจจุบัน</small></div>;
+}
+
+function OccupantRow({ occupant, onExit }: { occupant: Occupant; onExit: () => void }) {
+  const memberTotal = getMemberTotal(occupant);
   return (
-    <button
-      onClick={onClick}
-      style={{
-        flex: 1, padding: '10px', borderRadius: 12, fontSize: 13, fontWeight: 700, cursor: 'pointer',
-        border: active ? 'none' : '1px solid #ECEEF5',
-        background: active ? '#111827' : '#fff',
-        color: active ? '#fff' : '#6B7280',
-      }}
-    >
-      {label}
-    </button>
+    <article className={styles.activityRow}>
+      <div className={styles.personCell}><span>{getInitial(occupant.full_name)}</span><div><strong>{occupant.full_name}</strong><small>{occupant.phone || 'ไม่ระบุเบอร์โทร'}</small></div></div>
+      <div><span className={`${styles.sourceBadge} ${occupant.entry_source === 'rescuer' ? styles.badgeRescuer : styles.badgeSelf}`}>{occupant.entry_source === 'rescuer' ? <Truck size={13} /> : <Footprints size={13} />}{occupant.entry_source === 'rescuer' ? 'กู้ภัยพามา' : 'มาเอง'}</span></div>
+      <DateTimeCell value={occupant.entry_date} />
+      {occupant.exit_date ? <DateTimeCell value={occupant.exit_date} note={occupant.exit_destination ? EXIT_LABEL[occupant.exit_destination] : undefined} /> : <div className={`${styles.dateCell} ${styles.mutedCell}`}><strong>—</strong><small>ยังอยู่ในศูนย์</small></div>}
+      <div className={styles.memberCell}><strong>{memberTotal} คน</strong><small>ผู้ใหญ่ {occupant.adult_count} · เด็ก {occupant.child_count} · สูงอายุ {occupant.elder_count}</small></div>
+      <div className={styles.rowAction}>{occupant.status === 'in_shelter' ? <button onClick={onExit}>ยืนยันคนออก</button> : <span>{occupant.exit_destination ? EXIT_LABEL[occupant.exit_destination] : 'ออกจากศูนย์แล้ว'}</span>}</div>
+    </article>
   );
+}
+
+function DateTimeCell({ value, note }: { value: string; note?: string }) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return <div className={`${styles.dateCell} ${styles.mutedCell}`}><strong>—</strong><small>ไม่พบข้อมูลเวลา</small></div>;
+  return <div className={styles.dateCell}><strong>{date.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.</strong><small>{date.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}{note ? ` · ${note}` : ''}</small></div>;
+}
+
+function DashboardSkeleton() {
+  return <div className={styles.skeletonShell}><aside /><main><header /><section className={styles.skeletonHero} /><section className={styles.skeletonStats}>{Array.from({ length: 4 }, (_, index) => <i key={index} />)}</section><section className={styles.skeletonChart} /><section className={styles.skeletonTable} /></main></div>;
+}
+
+function buildChartData(occupants: Occupant[], range: ChartRange): ChartBucket[] {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let bucketCount = 8;
+  let bucketDuration = 3 * 60 * 60 * 1000;
+
+  if (range === 'week') {
+    start.setDate(start.getDate() - 6);
+    bucketCount = 7;
+    bucketDuration = 24 * 60 * 60 * 1000;
+  } else if (range === 'month') {
+    start.setDate(start.getDate() - 29);
+    bucketCount = 10;
+    bucketDuration = 3 * 24 * 60 * 60 * 1000;
+  }
+
+  const buckets = Array.from({ length: bucketCount }, (_, index): ChartBucket => {
+    const bucketStart = new Date(start.getTime() + index * bucketDuration);
+    const bucketEnd = new Date(bucketStart.getTime() + bucketDuration - 1);
+    const label = range === 'day'
+      ? `${String(bucketStart.getHours()).padStart(2, '0')}:00`
+      : range === 'week'
+        ? bucketStart.toLocaleDateString('th-TH', { weekday: 'short' })
+        : bucketStart.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
+    const detail = range === 'day'
+      ? `${bucketStart.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })} เวลา ${label}–${String(bucketEnd.getHours()).padStart(2, '0')}:59 น.`
+      : range === 'week'
+        ? bucketStart.toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'short' })
+        : `${bucketStart.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}–${bucketEnd.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}`;
+    return { key: bucketStart.toISOString(), label, detail, rescuer: 0, self: 0, home: 0 };
+  });
+
+  const addEvent = (dateValue: string | null | undefined, field: 'rescuer' | 'self' | 'home', count: number) => {
+    if (!dateValue || count < 1) return;
+    const eventTime = new Date(dateValue).getTime();
+    if (Number.isNaN(eventTime)) return;
+    const index = Math.floor((eventTime - start.getTime()) / bucketDuration);
+    if (index >= 0 && index < buckets.length) buckets[index][field] += count;
+  };
+
+  occupants.forEach(occupant => {
+    const count = getMemberTotal(occupant);
+    addEvent(occupant.entry_date, occupant.entry_source === 'rescuer' ? 'rescuer' : 'self', count);
+    if (occupant.exit_destination === 'home') addEvent(occupant.exit_date, 'home', count);
+  });
+
+  return buckets;
+}
+
+function getMemberTotal(occupant: Pick<Occupant, 'adult_count' | 'child_count' | 'elder_count'>) {
+  return Math.max(0, Number(occupant.adult_count) || 0) + Math.max(0, Number(occupant.child_count) || 0) + Math.max(0, Number(occupant.elder_count) || 0);
+}
+
+function getPercentageLabel(value: number, total: number) {
+  return total > 0 ? `${Math.round(value / total * 100)}% ของผู้พักพิง` : 'ยังไม่มีผู้พักพิง';
+}
+
+function getInitial(name?: string | null) {
+  return name?.trim().slice(0, 1).toLocaleUpperCase('th-TH') || '–';
+}
+
+function toLocalDateInput(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function toLocalTimeInput(date: Date) {
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+function parseLocalDateTime(dateValue: string, timeValue: string) {
+  const [year, month, day] = dateValue.split('-').map(Number);
+  const [hour, minute] = timeValue.split(':').map(Number);
+  if (![year, month, day, hour, minute].every(Number.isFinite)) return null;
+  const date = new Date(year, month - 1, day, hour, minute, 0, 0);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatRelativeUpdate(date: Date) {
+  const seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+  if (seconds < 20) return 'เมื่อสักครู่';
+  if (seconds < 60) return `${seconds} วินาทีที่แล้ว`;
+  return `${Math.floor(seconds / 60)} นาทีที่แล้ว`;
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.message ? error.message : fallback;
 }

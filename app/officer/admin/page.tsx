@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { PROJECT_NAME } from '@/lib/brand';
 
 interface Profile {
   id: string;
@@ -437,7 +438,7 @@ export default function AdminPage() {
         .admin-header-inner { height:100%; max-width:1440px !important; }
         .admin-brand { display:flex; align-items:center; gap:12px; }
         .admin-brand-mark { width:42px !important; height:42px !important; border-radius:14px !important; background:var(--ink) !important; color:#fff; font-size:16px !important; box-shadow:0 8px 18px rgba(23,52,60,.18); }
-        .admin-brand-title { font-size:15px !important; font-weight:800 !important; color:var(--ink) !important; }
+        .admin-brand-title { max-width:285px; font-size:15px !important; font-weight:800 !important; line-height:1.35; color:var(--ink) !important; }
         .admin-brand-user { font-size:11px !important; color:var(--muted) !important; }
         .admin-logout { display:inline-flex; align-items:center; gap:7px; padding:9px 14px !important; border:1px solid var(--line) !important; border-radius:12px !important; background:#fff !important; color:var(--slate-mid) !important; font-family:inherit; cursor:pointer; transition:.2s ease; }
         .admin-logout:hover { color:var(--primary-strong) !important; border-color:#B8CBE0 !important; background:#F2F6FB !important; transform:translateY(-1px); }
@@ -547,7 +548,7 @@ export default function AdminPage() {
                 🛡️
               </div>
               <div>
-                <div className="admin-brand-title" style={{ fontSize: 15, fontWeight: 700, color: '#001845' }}>Nexus Rescue Admin</div>
+                <div className="admin-brand-title" style={{ fontSize: 15, fontWeight: 700, color: '#001845' }}>{PROJECT_NAME}</div>
                 <div className="admin-brand-user" style={{ fontSize: 11, color: '#7D8597' }}>{profile.full_name}</div>
               </div>
             </div>
