@@ -484,9 +484,10 @@
 .dateCell strong,
 .memberCell strong { font-size: 11px; }
 .mutedCell strong { color: var(--pale); }
-.rowAction { text-align: right; }
-.rowAction button { min-height: 34px; padding: 0 10px; border: 1px solid #bfd3e7; border-radius: 9px; color: var(--primary-strong); background: #fff; font: 750 9px/1 var(--font-thai), sans-serif; cursor: pointer; }
+.rowAction { display: grid; justify-items: stretch; gap: 5px; text-align: right; }
+.rowAction button { min-height: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 0 9px; border: 1px solid #bfd3e7; border-radius: 9px; color: var(--primary-strong); background: #fff; font: 750 9px/1 var(--font-thai), sans-serif; cursor: pointer; }
 .rowAction button:hover { border-color: var(--primary); background: #eef6fd; }
+.rowAction .manifestButton { color: #33415c; border-color: #d5dde7; background: #f5f7fa; }
 .rowAction > span { display: inline-flex; align-items: center; justify-content: center; min-height: 30px; padding: 0 8px; border-radius: 8px; color: #18794e; background: #e8f7f0; font-size: 9px; font-weight: 750; white-space: nowrap; }
 .emptyState { min-width: 1010px; min-height: 230px; display: grid; place-items: center; align-content: center; gap: 7px; color: var(--muted); text-align: center; }
 .emptyState > span { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 15px; color: var(--primary); background: #eaf4fd; }
@@ -570,6 +571,37 @@
 .modalActions > button { min-height: 46px; border: 1px solid var(--line); border-radius: 11px; color: var(--muted); background: #fff; font: 750 12px/1 var(--font-thai), sans-serif; cursor: pointer; }
 .modalActions > button:disabled { opacity: .55; cursor: not-allowed; }
 .modalActions .primaryButton { border: 0; color: #fff; }
+
+.manifestModal { width: min(100%, 650px); }
+.manifestSummary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; margin-bottom: 13px; }
+.manifestSummary > div { min-width: 0; padding: 11px 9px; border: 1px solid var(--line); border-radius: 12px; background: #f7f9fc; }
+.manifestSummary small,
+.manifestSummary strong { display: block; }
+.manifestSummary small { overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.manifestSummary strong { margin-top: 3px; color: var(--ink); font-size: 17px; }
+.manifestSummary .manifestRed { border-color: #efc3c3; background: #fff2f2; }
+.manifestSummary .manifestRed strong { color: #b42318; }
+.manifestSummary .manifestHospital { border-color: #f2c58f; background: #fff7eb; }
+.manifestSummary .manifestHospital strong { color: #a54b00; }
+.manifestWarning { display: flex; align-items: flex-start; gap: 9px; margin-bottom: 13px; padding: 11px 12px; border: 1px solid #efc3c3; border-radius: 12px; color: #b42318; background: #fff6f6; }
+.manifestWarning svg { flex: 0 0 auto; margin-top: 1px; }
+.manifestWarning strong { display: block; font-size: 12px; }
+.manifestWarning p { margin: 2px 0 0; color: #7f3b36; font-size: 10px; line-height: 1.55; }
+.manifestPeople { display: grid; gap: 7px; max-height: 390px; overflow-y: auto; padding-right: 3px; }
+.manifestPeople article { display: grid; grid-template-columns: 36px minmax(0,1fr); gap: 9px; padding: 11px; border: 1px solid var(--line); border-radius: 12px; background: #f9fbfd; }
+.manifestPeople article > span { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 10px; }
+.manifestPeople strong,
+.manifestPeople small,
+.manifestPeople p { display: block; }
+.manifestPeople strong { color: var(--ink); font-size: 12px; }
+.manifestPeople small { margin-top: 3px; color: var(--muted); font-size: 10px; line-height: 1.45; }
+.manifestPeople p { margin: 5px 0 0; color: var(--slate); font-size: 10px; }
+.manifestPeople .personArrived > span { color: var(--primary-strong); background: #eaf3fc; }
+.manifestPeople .personHospital { border-color: #efc3c3; background: #fff8f8; }
+.manifestPeople .personHospital > span { color: #b42318; background: #ffeaea; }
+.manifestPeople .personDeceased { border-color: #aeb8c5; background: #f2f4f7; }
+.manifestPeople .personDeceased > span { color: #001845; background: #dfe4ea; }
+.manifestDone { width: 100%; min-height: 46px; margin-top: 14px; border: 0; border-radius: 11px; color: #fff; background: linear-gradient(135deg,var(--primary),var(--primary-strong)); font: 750 12px/1 var(--font-thai),sans-serif; cursor: pointer; }
 
 .fatalState { min-height: 100vh; display: grid; place-items: center; align-content: center; gap: 10px; padding: 24px; color: #001845; background: #f2f6fb; font-family: var(--font-thai), sans-serif; text-align: center; }
 .fatalState > span { width: 58px; height: 58px; display: grid; place-items: center; border-radius: 18px; color: #b43c3c; background: #fff0f0; }
@@ -657,12 +689,53 @@
   .modal { width: 100%; max-height: 94vh; padding: 20px 17px; border-radius: 22px 22px 15px 15px; }
   .countGrid { grid-template-columns: repeat(3, 1fr); gap: 6px; }
   .destinationGrid { grid-template-columns: 1fr; }
+  .manifestSummary { grid-template-columns: 1fr 1fr; }
   .toast { top: 78px; right: 12px; }
   .skeletonShell { display: block; }
   .skeletonShell > aside { display: none; }
   .skeletonShell > main { padding-inline: 13px; }
   .skeletonShell header { margin-inline: -13px; }
   .skeletonStats { grid-template-columns: 1fr 1fr; }
+}
+
+/* Readable type scale and on-site capacity editor */
+.capacityEditor { display: grid; gap: 7px; margin-top: 16px; padding: 12px; border: 1px solid #c9d9e9; border-radius: 13px; background: #f4f8fc; text-align: left; }
+.capacityEditor label { color: var(--ink); font-size: 13px; font-weight: 750; }
+.capacityEditor > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
+.capacityEditor input { min-width: 0; height: 43px; padding: 0 11px; border: 1px solid #b9cadb; border-radius: 10px; outline: 0; color: var(--ink); background: #fff; font: 700 16px/1 var(--font-thai), sans-serif; }
+.capacityEditor input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(4, 102, 200, .09); }
+.capacityEditor button { min-width: 76px; border: 0; border-radius: 10px; color: #fff; background: var(--primary-strong); font: 750 13px/1 var(--font-thai), sans-serif; cursor: pointer; }
+.capacityEditor button:disabled { opacity: .55; cursor: not-allowed; }
+.capacityEditor > span { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.shelterIdentity strong { font-size: 17px; }
+.shelterIdentity small,
+.profileBlock small { font-size: 12px; }
+.profileBlock strong { font-size: 15px; }
+.hero > div:first-child > p { font-size: 15px; }
+.heroActions > span { font-size: 12px; }
+.statCard small { font-size: 13px; }
+.statCard p { font-size: 12px; }
+.compactHeading h2 { font-size: 19px; }
+.compactHeading > span { font-size: 12px; }
+.capacityRing span { font-size: 12px; }
+.capacityCard > p span { font-size: 13px; }
+.capacityCard > small { font-size: 12px; line-height: 1.5; }
+.searchBox input { font-size: 14px; }
+.tabs button { font-size: 13px; }
+.tableHead { font-size: 12px; }
+.personCell strong { font-size: 15px; }
+.personCell small,
+.memberCell small { font-size: 12px; }
+.memberCell strong { font-size: 14px; }
+.modalHeading p { font-size: 13px; }
+.modalActions > button { font-size: 14px; }
+
+@media (max-width: 680px) {
+  .shelterIdentity strong { max-width: 190px; font-size: 15px; }
+  .shelterIdentity small { font-size: 11px; }
+  .legendItem span { font-size: 11px; }
+  .legendItem strong { font-size: 13px; }
+  .chartColumn > span { font-size: 10px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -30,18 +30,19 @@ type Shelter = {
   is_active: boolean;
 };
 
-type OccupancyStatus = 'available' | 'limited' | 'full';
+type OccupancyStatus = 'available' | 'limited' | 'full' | 'unknown';
 
 const STATUS_META: Record<OccupancyStatus, { label: string; className: string }> = {
   available: { label: 'พร้อมรองรับ', className: 'available' },
   limited: { label: 'ใกล้เต็ม', className: 'limited' },
   full: { label: 'เต็มแล้ว', className: 'full' },
+  unknown: { label: 'ยังไม่ระบุความจุ', className: 'unknown' },
 };
 
 function getOccupancyStatus(capacity: number, occupancy: number): OccupancyStatus {
-  if (capacity <= 0 || occupancy / capacity >= 0.85) {
-    return capacity > 0 && occupancy >= capacity ? 'full' : 'limited';
-  }
+  if (capacity <= 0) return 'unknown';
+  if (occupancy >= capacity) return 'full';
+  if (occupancy / capacity >= 0.85) return 'limited';
   return 'available';
 }
 
@@ -319,9 +320,9 @@ const SHELTER_STYLES = `
   .shelter-item-copy { min-width:0; flex:1; }.shelter-item-title-row { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }.shelter-item h2 { min-width:0; margin:1px 0 0; overflow:hidden; color:var(--ink); font-size:13px; font-weight:750; line-height:1.35; text-overflow:ellipsis; white-space:nowrap; }
   .shelter-item-copy p { display:flex; align-items:flex-start; gap:4px; margin:3px 0 0; color:var(--muted); font-size:9px; line-height:1.45; }.shelter-item-copy p svg { flex:0 0 auto; margin-top:1px; }
   .shelter-status { flex:0 0 auto; display:flex; align-items:center; gap:5px; padding:4px 7px; border-radius:999px; font-size:8px; font-weight:750; }.shelter-status i { width:5px; height:5px; border-radius:50%; background:currentColor; }
-  .shelter-status.available { color:var(--blue-strong); background:#EAF3FC; }.shelter-status.limited { color:var(--slate); background:#EEF0F4; }.shelter-status.full { color:var(--midnight); background:#DDE2EA; }
+  .shelter-status.available { color:var(--blue-strong); background:#EAF3FC; }.shelter-status.limited { color:var(--slate); background:#EEF0F4; }.shelter-status.full { color:var(--midnight); background:#DDE2EA; }.shelter-status.unknown { color:#805400; background:#FFF3D7; }
   .shelter-capacity { margin-top:16px; }.shelter-capacity-head { display:flex; align-items:end; justify-content:space-between; gap:10px; color:var(--muted); font-size:9px; }.shelter-capacity-head > span { display:flex; align-items:center; gap:5px; }.shelter-capacity-head strong { color:var(--ink); font-size:13px; }.shelter-capacity-head small { color:var(--muted); font-size:9px; font-weight:500; }
-  .shelter-progress { height:6px; overflow:hidden; margin-top:7px; border-radius:999px; background:#E7ECF3; }.shelter-progress span { display:block; height:100%; min-width:3px; border-radius:inherit; transition:width .5s ease; }.shelter-progress span.available { background:var(--blue); }.shelter-progress span.limited { background:var(--slate); }.shelter-progress span.full { background:var(--midnight); }
+  .shelter-progress { height:6px; overflow:hidden; margin-top:7px; border-radius:999px; background:#E7ECF3; }.shelter-progress span { display:block; height:100%; min-width:3px; border-radius:inherit; transition:width .5s ease; }.shelter-progress span.available { background:var(--blue); }.shelter-progress span.limited { background:var(--slate); }.shelter-progress span.full { background:var(--midnight); }.shelter-progress span.unknown { min-width:100%; background:repeating-linear-gradient(135deg,#E6C36B 0 7px,#F4E2AE 7px 14px); }
   .shelter-remaining { display:block; margin-top:5px; color:var(--pale); font-size:8px; }
   .shelter-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:11px 13px 13px 16px; border-top:1px solid #E9EDF3; background:#FBFCFE; }
   .shelter-actions a { min-width:0; min-height:44px; display:flex; align-items:center; justify-content:center; gap:8px; padding:8px 10px; border-radius:12px; text-decoration:none; transition:.18s; }.shelter-actions a:hover { transform:translateY(-1px); }.shelter-actions strong,.shelter-actions small { display:block; }.shelter-actions strong { font-size:10px; }.shelter-actions small { margin-top:1px; overflow:hidden; font-size:7px; font-weight:450; opacity:.65; text-overflow:ellipsis; white-space:nowrap; }

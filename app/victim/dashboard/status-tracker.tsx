@@ -37,6 +37,13 @@ type SosReport = {
   updated_at?: string | null;
 };
 
+type VictimDestinationStatus = {
+  status: 'waiting' | 'rescue_assigned' | 'rescued' | 'at_shelter' | 'returned_home' | 'unknown';
+  shelter_name: string | null;
+  notes: string | null;
+  updated_at: string | null;
+};
+
 const STATUS_COPY: Record<SosReport['status'], { title: string; description: string; badge: string }> = {
   pending: { title: 'รับคำขอของคุณแล้ว', description: 'ศูนย์ประสานงานกำลังตรวจสอบข้อมูลและจัดทีมที่เหมาะสม', badge: 'กำลังประสานทีม' },
   assigned: { title: 'ทีมกู้ภัยกำลังเข้าช่วยเหลือ', description: 'เจ้าหน้าที่รับภารกิจแล้ว โปรดเปิดโทรศัพท์ไว้เพื่อรับการติดต่อ', badge: 'ทีมกำลังเดินทาง' },
@@ -67,6 +74,7 @@ export default function StatusTracker({
 }) {
   const [searchPhone, setSearchPhone] = useState(() => initialPhone || getSavedPhone() || '');
   const [report, setReport] = useState<SosReport | null>(null);
+  const [destinationStatus, setDestinationStatus] = useState<VictimDestinationStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState('');
@@ -88,7 +96,18 @@ export default function StatusTracker({
       setError('ไม่สามารถตรวจสอบสถานะได้ กรุณาลองใหม่อีกครั้ง');
       setReport(null);
     } else {
-      setReport(data as SosReport | null);
+      const nextReport = data as SosReport | null;
+      setReport(nextReport);
+      if (nextReport) {
+        const { data: statusData } = await supabase
+          .from('victim_status')
+          .select('status, shelter_name, notes, updated_at')
+          .eq('sos_report_id', nextReport.id)
+          .maybeSingle();
+        setDestinationStatus(statusData as VictimDestinationStatus | null);
+      } else {
+        setDestinationStatus(null);
+      }
     }
     setSearched(true);
     setLoading(false);
@@ -110,6 +129,11 @@ export default function StatusTracker({
         { event: 'UPDATE', schema: 'public', table: 'sos_reports', filter: `id=eq.${report.id}` },
         (payload) => setReport(payload.new as SosReport),
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'victim_status', filter: `sos_report_id=eq.${report.id}` },
+        (payload) => setDestinationStatus(payload.new as VictimDestinationStatus),
+      )
       .subscribe();
 
     return () => { void supabase.removeChannel(channel); };
@@ -121,11 +145,35 @@ export default function StatusTracker({
   };
 
   const timelineIndex = report ? getTimelineIndex(report.status) : 0;
-  const statusCopy = report ? STATUS_COPY[report.status] : null;
+  const statusCopy = useMemo(() => {
+    if (!report) return null;
+    const base = STATUS_COPY[report.status];
+    if (report.status === 'assigned' && destinationStatus?.notes) {
+      return { ...base, description: destinationStatus.notes };
+    }
+    if (report.status === 'rescued' && destinationStatus?.status === 'at_shelter') {
+      return {
+        title: destinationStatus.shelter_name ? `ถึง${destinationStatus.shelter_name}แล้ว` : 'ถึงศูนย์พักพิงแล้ว',
+        description: destinationStatus.notes || 'เจ้าหน้าที่นำส่งถึงศูนย์พักพิงเรียบร้อยแล้ว',
+        badge: 'อยู่ที่ศูนย์พักพิง',
+      };
+    }
+    if (report.status === 'rescued' && destinationStatus?.status === 'returned_home') {
+      return {
+        title: 'กลับถึงบ้านแล้ว',
+        description: destinationStatus.notes || 'ออกจากศูนย์พักพิงและเดินทางกลับบ้านเรียบร้อยแล้ว',
+        badge: 'กลับบ้าน',
+      };
+    }
+    if (report.status === 'rescued' && destinationStatus?.notes) {
+      return { ...base, description: destinationStatus.notes };
+    }
+    return base;
+  }, [destinationStatus, report]);
   const updatedTime = useMemo(() => {
     if (!report) return '';
-    return new Date(report.updated_at || report.created_at).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
-  }, [report]);
+    return new Date(destinationStatus?.updated_at || report.updated_at || report.created_at).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
+  }, [destinationStatus?.updated_at, report]);
 
   return (
     <div className="status-tracker">
@@ -185,6 +233,9 @@ export default function StatusTracker({
                 {report.address_details && <div><dt>จุดสังเกต</dt><dd>{report.address_details}</dd></div>}
                 <div><dt><Waves size={14} /> ระดับน้ำ</dt><dd>{report.water_level ?? '-'} เมตร</dd></div>
                 <div><dt><PackageOpen size={14} /> สิ่งของที่ต้องการ</dt><dd>{report.needed_items?.length ? report.needed_items.join(', ') : 'ไม่ได้ระบุ'}</dd></div>
+                {destinationStatus && (destinationStatus.shelter_name || destinationStatus.notes) && (
+                  <div className="important"><dt><ShieldCheck size={14} /> สถานที่ปัจจุบัน</dt><dd>{destinationStatus.shelter_name || destinationStatus.notes}{destinationStatus.shelter_name && destinationStatus.notes ? <><br />{destinationStatus.notes}</> : null}</dd></div>
+                )}
                 {report.special_needs && <div className="important"><dt><AlertCircle size={14} /> หมายเหตุสำคัญ</dt><dd>{report.special_needs}</dd></div>}
               </dl>
               <button className="status-refresh" onClick={() => fetchReport(searchPhone)} disabled={loading}><RefreshCw size={14} /> อัปเดตสถานะอีกครั้ง</button>

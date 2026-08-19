@@ -2,11 +2,10 @@
 
 import React from 'react';
 import dynamic from 'next/dynamic';
-import { usePathname, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import type { LucideIcon } from 'lucide-react';
 import { PROJECT_NAME } from '@/lib/brand';
 import {
-  Activity,
   AlertTriangle,
   ArrowUpRight,
   Bell,
@@ -14,7 +13,6 @@ import {
   Radio,
   ShieldCheck,
   Truck,
-  User,
   Wallet,
 } from 'lucide-react';
 
@@ -28,16 +26,8 @@ const MapComponent = dynamic(() => import('@/components/Map'), {
   ),
 });
 
-const NAV_ITEMS = [
-  { key: 'sos', label: 'SOS', icon: AlertTriangle, href: '/victim/dashboard' },
-  { key: 'status', label: 'สถานะ', icon: Activity, href: '/victim/dashboard?tab=status' },
-  { key: 'compensation', label: 'เยียวยา', icon: Wallet, href: '/victim/compensation' },
-  { key: 'profile', label: 'ข้อมูลฉัน', icon: User, href: '/victim/profile' },
-] as const;
-
 export default function HomePage() {
   const router = useRouter();
-  const pathname = usePathname();
 
   return (
     <>
@@ -127,23 +117,6 @@ export default function HomePage() {
             </div>
           </section>
         </main>
-
-        <nav className="home-bottom-nav" aria-label="เมนูบริการหลัก">
-          {NAV_ITEMS.map(({ key, label, icon: Icon, href }) => {
-            const active = pathname === href.split('?')[0];
-            return (
-              <button
-                key={key}
-                className={active ? 'active' : ''}
-                onClick={() => router.push(href)}
-                aria-current={active ? 'page' : undefined}
-              >
-                <span className="home-nav-icon"><Icon size={18} strokeWidth={2.2} /></span>
-                <span>{label}</span>
-              </button>
-            );
-          })}
-        </nav>
       </div>
     </>
   );
@@ -226,7 +199,7 @@ const HOME_STYLES = `
     isolation:isolate;
     min-height:100vh;
     overflow:hidden;
-    padding:0 24px 116px;
+    padding:0 24px 40px;
     color:var(--ink);
     background:linear-gradient(145deg,#F9FBFE 0%,#F3F7FC 52%,#EAF1F9 100%);
     font-family:var(--font-thai),'IBM Plex Sans Thai',sans-serif;
@@ -366,27 +339,6 @@ const HOME_STYLES = `
   .home-map-loading-ring { width:24px; height:24px; border:2px solid #C9D6E4; border-top-color:var(--blue); border-radius:50%; animation:home-spin .8s linear infinite; }
   .home-map-foot { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:13px 3px 0; color:var(--muted); font-size:9px; }
   .home-map-foot button { display:flex; align-items:center; gap:5px; border:0; color:var(--blue); background:transparent; font-family:inherit; font-size:10px; font-weight:700; cursor:pointer; }
-  .home-bottom-nav {
-    position:fixed;
-    z-index:50;
-    left:50%;
-    bottom:22px;
-    width:min(calc(100% - 32px),390px);
-    display:grid;
-    grid-template-columns:repeat(4,1fr);
-    gap:4px;
-    padding:8px;
-    border:1px solid rgba(255,255,255,.1);
-    border-radius:24px;
-    background:rgba(0,24,69,.94);
-    box-shadow:0 18px 40px rgba(0,18,51,.22);
-    backdrop-filter:blur(16px);
-    transform:translateX(-50%);
-  }
-  .home-bottom-nav button { display:grid; place-items:center; gap:2px; padding:4px 3px; border:0; border-radius:17px; color:rgba(255,255,255,.5); background:transparent; font-family:inherit; font-size:9px; font-weight:650; cursor:pointer; transition:.2s ease; }
-  .home-bottom-nav button:hover,.home-bottom-nav button.active { color:#fff; background:rgba(255,255,255,.09); }
-  .home-nav-icon { width:34px; height:30px; display:grid; place-items:center; border-radius:11px; transition:.2s ease; }
-  .home-bottom-nav button.active .home-nav-icon { color:#fff; background:var(--blue); box-shadow:0 6px 14px rgba(4,102,200,.3); }
   /* Readable public-facing type scale */
   .home-brand-name { font-size:18px; }
   .home-brand-subtitle { font-size:13px; }
@@ -403,14 +355,13 @@ const HOME_STYLES = `
   .home-map-loading { font-size:14px; }
   .home-map-foot { font-size:12px; }
   .home-map-foot button { min-height:40px; font-size:13px; }
-  .home-bottom-nav button { min-height:62px; font-size:12px; }
   @media(max-width:900px) {
     .home-main { grid-template-columns:1fr; max-width:620px; margin-top:12px; }
     .home-header { max-width:620px; }
     .home-map-frame { height:360px; }
   }
   @media(max-width:560px) {
-    .home-shell { padding:0 15px 108px; }
+    .home-shell { padding:0 15px 32px; }
     .home-header { min-height:78px; }
     .home-brand-mark { width:40px; height:40px; flex:0 0 40px; border-radius:13px; }
     .home-brand-name { max-width:245px; font-size:15px; line-height:1.35; }
@@ -433,7 +384,6 @@ const HOME_STYLES = `
   }
   @media(max-width:360px) {
     .home-role-copy small { display:none; }
-    .home-bottom-nav { bottom:12px; width:calc(100% - 20px); }
   }
   @media(prefers-reduced-motion:reduce) {
     .home-actions,.home-map-card,.home-map-loading-ring,.home-eyebrow > span,.home-online > span { animation:none; }

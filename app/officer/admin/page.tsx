@@ -739,13 +739,18 @@ function SheltersTab() {
 
   const addShelter = async () => {
     if (!draft.name.trim()) { alert('กรุณากรอกชื่อศูนย์'); return; }
+    const capacity = Number(draft.capacity);
+    if (!Number.isInteger(capacity) || capacity < 1) {
+      alert('กรุณาระบุจำนวนคนที่ศูนย์รับได้สูงสุดอย่างน้อย 1 คน');
+      return;
+    }
     setSaving(true);
     try {
       const { error } = await supabase.from('shelters').insert({
         name: draft.name.trim(),
         address: draft.address.trim() || null,
         province: draft.province.trim() || null,
-        capacity: draft.capacity ? Number(draft.capacity) : 0,
+        capacity,
         contact_phone: draft.contact_phone.trim() || null,
       });
       if (error) throw error;
@@ -760,9 +765,20 @@ function SheltersTab() {
   };
 
   const saveEdit = async (id: string) => {
+    const currentShelter = shelters.find(shelter => shelter.id === id);
+    if (!currentShelter) return;
+    const capacity = Number(editDraft.capacity ?? currentShelter.capacity);
+    if (!Number.isInteger(capacity) || capacity < 1) {
+      alert('กรุณาระบุจำนวนคนที่ศูนย์รับได้สูงสุดอย่างน้อย 1 คน');
+      return;
+    }
+    if (capacity < (currentShelter.current_occupancy ?? 0)) {
+      alert(`ความจุต้องไม่น้อยกว่าจำนวนผู้พักพิงปัจจุบัน ${currentShelter.current_occupancy ?? 0} คน`);
+      return;
+    }
     setSaving(true);
     try {
-      const { error } = await supabase.from('shelters').update(editDraft).eq('id', id);
+      const { error } = await supabase.from('shelters').update({ ...editDraft, capacity }).eq('id', id);
       if (error) throw error;
       setEditingId(null);
       fetchShelters();
@@ -789,9 +805,19 @@ function SheltersTab() {
   };
 
   if (loading) return <AdminPanelSkeleton variant="shelters" />;
+  const missingCapacityCount = shelters.filter(shelter => !shelter.capacity || shelter.capacity < 1).length;
 
   return (
     <div className="admin-panel admin-shelters">
+      {missingCapacityCount > 0 && (
+        <div style={{
+          marginBottom: 14, padding: '12px 14px', border: '1px solid #F2C97D',
+          borderRadius: 13, color: '#7A4B00', background: '#FFF8E8', fontSize: 13, lineHeight: 1.55,
+        }}>
+          <strong style={{ display: 'block', color: '#5F3A00' }}>ต้องกำหนดความจุอีก {missingCapacityCount} ศูนย์</strong>
+          ศูนย์ที่ยังไม่กำหนดจำนวนสูงสุดจะแสดงคำเตือนแก่กู้ภัยและผู้ประสบภัย
+        </div>
+      )}
       <button
         className="admin-add-button"
         onClick={() => setShowAdd(v => !v)}
@@ -810,7 +836,7 @@ function SheltersTab() {
           <input placeholder="ที่อยู่" value={draft.address} onChange={e => setDraft({ ...draft, address: e.target.value })} style={inputStyle} />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             <input placeholder="จังหวัด" value={draft.province} onChange={e => setDraft({ ...draft, province: e.target.value })} style={inputStyle} />
-            <input placeholder="ความจุ (คน)" type="number" value={draft.capacity} onChange={e => setDraft({ ...draft, capacity: e.target.value })} style={inputStyle} />
+            <input aria-label="จำนวนคนที่ศูนย์รับได้สูงสุด" placeholder="รับได้สูงสุด (คน) *" type="number" min={1} step={1} required value={draft.capacity} onChange={e => setDraft({ ...draft, capacity: e.target.value })} style={inputStyle} />
           </div>
           <input placeholder="เบอร์ติดต่อ" value={draft.contact_phone} onChange={e => setDraft({ ...draft, contact_phone: e.target.value })} style={inputStyle} />
           <button onClick={addShelter} disabled={saving} style={{ padding: 12, borderRadius: 12, border: 'none', background: '#023E7D', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
@@ -827,7 +853,7 @@ function SheltersTab() {
                 <input defaultValue={s.name} onChange={e => setEditDraft({ ...editDraft, name: e.target.value })} style={inputStyle} />
                 <input defaultValue={s.address ?? ''} onChange={e => setEditDraft({ ...editDraft, address: e.target.value })} style={inputStyle} placeholder="ที่อยู่" />
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  <input defaultValue={s.capacity} type="number" onChange={e => setEditDraft({ ...editDraft, capacity: Number(e.target.value) })} style={inputStyle} placeholder="ความจุ" />
+                  <input aria-label="จำนวนคนที่ศูนย์รับได้สูงสุด" defaultValue={s.capacity || ''} type="number" min={Math.max(1, s.current_occupancy ?? 0)} step={1} required onChange={e => setEditDraft({ ...editDraft, capacity: Number(e.target.value) })} style={inputStyle} placeholder="รับได้สูงสุด (คน) *" />
                   <input defaultValue={s.contact_phone ?? ''} onChange={e => setEditDraft({ ...editDraft, contact_phone: e.target.value })} style={inputStyle} placeholder="เบอร์ติดต่อ" />
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -842,11 +868,16 @@ function SheltersTab() {
                     {s.name} {!s.is_active && <span style={{ fontSize: 10, color: '#33415C', fontWeight: 700 }}>(ปิดใช้งาน)</span>}
                   </div>
                   <div style={{ fontSize: 12, color: '#7D8597', marginTop: 2 }}>
-                    {s.address ?? 'ไม่ระบุที่อยู่'} · {s.current_occupancy}/{s.capacity} คน
+                    {s.address ?? 'ไม่ระบุที่อยู่'} · ปัจจุบัน {s.current_occupancy ?? 0} คน · {s.capacity > 0 ? `รับได้สูงสุด ${s.capacity} คน` : 'ยังไม่กำหนดความจุ'}
                   </div>
+                  {(!s.capacity || s.capacity < 1) && (
+                    <div style={{ marginTop: 5, color: '#9A3412', fontSize: 11, fontWeight: 700 }}>
+                      กรุณากดแก้ไขและระบุจำนวนที่ศูนย์รับได้สูงสุด
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <button onClick={() => { setEditingId(s.id); setEditDraft({}); }} style={{ padding: '7px 12px', borderRadius: 10, border: '1px solid #C9D6E5', background: '#F5F8FC', color: '#0353A4', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>แก้ไข</button>
+                  <button onClick={() => { setEditingId(s.id); setEditDraft({ capacity: s.capacity }); }} style={{ padding: '7px 12px', borderRadius: 10, border: '1px solid #C9D6E5', background: '#F5F8FC', color: '#0353A4', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>แก้ไข</button>
                   <button onClick={() => toggleActive(s)} style={{ padding: '7px 12px', borderRadius: 10, border: '1px solid #DDE3EC', background: '#fff', color: '#33415C', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                     {s.is_active ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}
                   </button>

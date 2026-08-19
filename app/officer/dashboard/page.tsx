@@ -40,6 +40,21 @@ interface Shelter {
   name: string;
   address?: string;
   province?: string;
+  capacity?: number | null;
+  current_occupancy?: number | null;
+}
+
+type AgeGroup = 'adult' | 'child' | 'elder';
+type ExceptionDisposition = 'hospital' | 'deceased' | 'other_safe';
+
+interface DeliveryExceptionDraft {
+  clientId: string;
+  ageGroup: AgeGroup;
+  count: number;
+  disposition: ExceptionDisposition;
+  destinationName: string;
+  referenceName: string;
+  notes: string;
 }
 
 // สถานะ modal "ยืนยันผลการช่วยเหลือ" ที่กำลังเปิดอยู่ (เก็บข้อมูลเคสไว้ตั้งต้นค่า default)
@@ -50,9 +65,15 @@ interface OutcomeDraft {
   destinationType: 'shelter' | 'relative_home' | 'hotel' | 'other_safe' | null;
   destinationShelterId: string;
   destinationNote: string;
+  requestedAdult: number;
+  requestedChild: number;
+  requestedElder: number;
   confirmedAdult: number;
   confirmedChild: number;
   confirmedElder: number;
+  exceptions: DeliveryExceptionDraft[];
+  countDiscrepancyReason: '' | 'left_before_arrival' | 'not_found' | 'data_error' | 'other';
+  countDiscrepancyNote: string;
   cannotReachReason: 'no_access' | 'deceased' | null;
   notes: string;
 }
@@ -112,6 +133,39 @@ const STATUS_LABEL: Record<string, string> = {
   cannot_reach: 'เข้าไม่ถึง',
   closed: 'ปิดเคส',
 };
+
+const AGE_GROUP_LABEL: Record<AgeGroup, string> = {
+  adult: 'ผู้ใหญ่',
+  child: 'เด็ก',
+  elder: 'ผู้สูงอายุ',
+};
+
+const CONFIRMED_COUNT_KEY: Record<AgeGroup, 'confirmedAdult' | 'confirmedChild' | 'confirmedElder'> = {
+  adult: 'confirmedAdult',
+  child: 'confirmedChild',
+  elder: 'confirmedElder',
+};
+
+const DISCREPANCY_REASON_LABEL: Record<Exclude<OutcomeDraft['countDiscrepancyReason'], ''>, string> = {
+  left_before_arrival: 'ออกจากพื้นที่ก่อนกู้ภัยมาถึง',
+  not_found: 'ไม่พบบุคคลในพื้นที่',
+  data_error: 'จำนวนในคำร้องคลาดเคลื่อน',
+  other: 'เหตุผลอื่น',
+};
+
+const createClientId = () => typeof crypto !== 'undefined' && 'randomUUID' in crypto
+  ? crypto.randomUUID()
+  : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+const createDeliveryException = (disposition: ExceptionDisposition = 'hospital'): DeliveryExceptionDraft => ({
+  clientId: createClientId(),
+  ageGroup: 'adult',
+  count: 1,
+  disposition,
+  destinationName: '',
+  referenceName: '',
+  notes: '',
+});
 
 export default function OfficerDashboard() {
   const router = useRouter();
@@ -211,7 +265,7 @@ export default function OfficerDashboard() {
 
     const fetchShelters = async () => {
       const { data } = await supabase
-        .from('shelters').select('id, name, address, province')
+        .from('shelters').select('id, name, address, province, capacity, current_occupancy')
         .eq('is_active', true).order('name');
       setShelters((data as Shelter[]) ?? []);
     };
@@ -341,7 +395,16 @@ export default function OfficerDashboard() {
       const victimMap: Record<string, string> = {
         rescued: 'rescued', cannot_reach: 'unknown', closed: 'unknown',
       };
-      if (victimMap[newSOSStatus]) {
+      if (newAssignStatus === 'en_route' || newAssignStatus === 'on_scene') {
+        await supabase.from('victim_status').upsert({
+          sos_report_id: reportId,
+          status: 'rescue_assigned',
+          notes: newAssignStatus === 'en_route'
+            ? 'ทีมกู้ภัยเริ่มเดินทางไปยังจุดเกิดเหตุแล้ว'
+            : 'ทีมกู้ภัยถึงจุดเกิดเหตุและกำลังดำเนินการช่วยเหลือ',
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'sos_report_id' });
+      } else if (victimMap[newSOSStatus]) {
         await supabase.from('victim_status')
           .update({ status: victimMap[newSOSStatus], updated_at: new Date().toISOString() })
           .eq('sos_report_id', reportId);
@@ -379,18 +442,55 @@ export default function OfficerDashboard() {
       destinationType: null,
       destinationShelterId: '',
       destinationNote: '',
+      requestedAdult: report.adult_count ?? 0,
+      requestedChild: report.child_count ?? 0,
+      requestedElder: report.elder_count ?? 0,
       confirmedAdult: report.adult_count ?? 0,
       confirmedChild: report.child_count ?? 0,
       confirmedElder: report.elder_count ?? 0,
+      exceptions: [],
+      countDiscrepancyReason: '',
+      countDiscrepancyNote: '',
       cannotReachReason: null,
       notes: '',
     });
   };
 
-  // บันทึกผลการช่วยเหลือจริงลง DB ทีละตาราง (ตาม pattern เดิมของหน้านี้ ไม่ใช้ DB trigger)
+  const updateDeliveryException = (clientId: string, patch: Partial<DeliveryExceptionDraft>) => {
+    setOutcomeDraft(current => current ? {
+      ...current,
+      exceptions: current.exceptions.map(item => item.clientId === clientId ? { ...item, ...patch } : item),
+    } : current);
+  };
+
+  const addDeliveryException = (disposition: ExceptionDisposition = 'hospital') => {
+    setOutcomeDraft(current => current ? {
+      ...current,
+      exceptions: [...current.exceptions, createDeliveryException(disposition)],
+    } : current);
+  };
+
+  const removeDeliveryException = (clientId: string) => {
+    setOutcomeDraft(current => current ? {
+      ...current,
+      exceptions: current.exceptions.filter(item => item.clientId !== clientId),
+    } : current);
+  };
+
+  const changeConfirmedCount = (ageGroup: AgeGroup, delta: number) => {
+    setOutcomeDraft(current => {
+      if (!current) return current;
+      const key = CONFIRMED_COUNT_KEY[ageGroup];
+      return { ...current, [key]: Math.max(0, current[key] + delta) };
+    });
+  };
+
+  // ตรวจข้อมูลแบบกลุ่ม แล้วบันทึกผ่าน RPC เดียวให้ฐานข้อมูลทำงานแบบ atomic
   const confirmOutcome = async () => {
     if (!outcomeDraft || !profile) return;
     const d = outcomeDraft;
+    const requestedTotal = d.requestedAdult + d.requestedChild + d.requestedElder;
+    const confirmedTotal = d.confirmedAdult + d.confirmedChild + d.confirmedElder;
 
     if (d.mode === 'rescued' && !d.destinationType) {
       alert('กรุณาเลือกว่านำส่งไปที่ไหน'); return;
@@ -398,28 +498,178 @@ export default function OfficerDashboard() {
     if (d.mode === 'rescued' && d.destinationType === 'shelter' && !d.destinationShelterId) {
       alert('กรุณาเลือกศูนย์พักพิงที่นำส่ง'); return;
     }
+    if (d.mode === 'rescued' && d.destinationType && d.destinationType !== 'shelter' && !d.destinationNote.trim()) {
+      alert('กรุณาระบุชื่อหรือรายละเอียดของปลายทางหลัก'); return;
+    }
     if (d.mode === 'cannot_reach' && !d.cannotReachReason) {
       alert('กรุณาเลือกเหตุผลที่เข้าไม่ถึง'); return;
     }
+
+    const exceptionCountByAge: Record<AgeGroup, number> = { adult: 0, child: 0, elder: 0 };
+    d.exceptions.forEach(item => { exceptionCountByAge[item.ageGroup] += item.count; });
+    const primaryCounts: Record<AgeGroup, number> = {
+      adult: d.confirmedAdult - exceptionCountByAge.adult,
+      child: d.confirmedChild - exceptionCountByAge.child,
+      elder: d.confirmedElder - exceptionCountByAge.elder,
+    };
+    const primaryTotal = primaryCounts.adult + primaryCounts.child + primaryCounts.elder;
+
+    if (d.mode === 'rescued') {
+      if (confirmedTotal === 0) {
+        alert('กรุณาระบุจำนวนผู้ประสบภัยที่พบอย่างน้อย 1 คน'); return;
+      }
+      if (Object.values(primaryCounts).some(count => count < 0)) {
+        alert('จำนวนผู้ที่แยกปลายทางมากกว่าจำนวนผู้ประสบภัยที่พบ กรุณาตรวจสอบกลุ่มอายุและจำนวน'); return;
+      }
+      if (d.exceptions.some(item => item.count < 1 || !item.destinationName.trim())) {
+        alert('กรุณาระบุโรงพยาบาล สถานที่เสียชีวิต หรือปลายทางของผู้ที่ไม่ได้ไปปลายทางหลัก'); return;
+      }
+      if (confirmedTotal !== requestedTotal && (!d.countDiscrepancyReason || !d.countDiscrepancyNote.trim())) {
+        alert(`พบผู้ประสบภัย ${confirmedTotal} คน แต่คำร้องแจ้งไว้ ${requestedTotal} คน กรุณาเลือกเหตุผลและระบุรายละเอียด`); return;
+      }
+      if (d.destinationType === 'shelter' && primaryTotal > 0) {
+        const selectedShelter = shelters.find(shelter => shelter.id === d.destinationShelterId);
+        const capacity = selectedShelter?.capacity ?? 0;
+        const occupancy = selectedShelter?.current_occupancy ?? 0;
+        if (capacity < 1) {
+          alert('ศูนย์นี้ยังไม่กำหนดจำนวนที่รับได้สูงสุด กรุณาเลือกศูนย์อื่นหรือติดต่อผู้ดูแลระบบ');
+          return;
+        }
+        if (capacity > 0 && occupancy + primaryTotal > capacity) {
+          alert(`ศูนย์นี้เหลือที่ว่าง ${Math.max(capacity - occupancy, 0)} คน แต่กำลังนำส่ง ${primaryTotal} คน กรุณาเลือกศูนย์อื่น`); return;
+        }
+      }
+    }
+
+    const confirmedAdult = primaryCounts.adult;
+    const confirmedChild = primaryCounts.child;
+    const confirmedElder = primaryCounts.elder;
+    const selectedShelter = shelters.find(shelter => shelter.id === d.destinationShelterId);
+    const peoplePayload: Array<{
+      full_name: string;
+      age_group: AgeGroup;
+      is_primary_destination: boolean;
+      destination_type: string | null;
+      destination_name: string;
+      notes: string | null;
+    }> = [];
+    let personSequence = 0;
+    const appendPerson = (
+      ageGroup: AgeGroup,
+      disposition: 'primary' | ExceptionDisposition,
+      destinationName: string,
+      referenceName = '',
+      notes = '',
+    ) => {
+      personSequence += 1;
+      const temporaryName = `${AGE_GROUP_LABEL[ageGroup]}ไม่ระบุชื่อ #${String(personSequence).padStart(2, '0')}`;
+      peoplePayload.push({
+        full_name: referenceName.trim() || temporaryName,
+        age_group: ageGroup,
+        is_primary_destination: disposition === 'primary',
+        destination_type: disposition === 'primary' ? d.destinationType : disposition,
+        destination_name: destinationName,
+        notes: [
+          referenceName.trim() ? null : `รหัสชั่วคราว P${String(personSequence).padStart(2, '0')}`,
+          notes.trim() || null,
+        ].filter(Boolean).join(' · ') || null,
+      });
+    };
+
+    if (d.mode === 'rescued') {
+      const primaryDestinationName = d.destinationType === 'shelter'
+        ? selectedShelter?.name ?? ''
+        : d.destinationNote.trim();
+      (Object.keys(primaryCounts) as AgeGroup[]).forEach(ageGroup => {
+        for (let index = 0; index < primaryCounts[ageGroup]; index += 1) {
+          appendPerson(ageGroup, 'primary', primaryDestinationName);
+        }
+      });
+      d.exceptions.forEach(item => {
+        for (let index = 0; index < item.count; index += 1) {
+          appendPerson(
+            item.ageGroup,
+            item.disposition,
+            item.destinationName.trim(),
+            item.count === 1 ? item.referenceName : '',
+            item.notes,
+          );
+        }
+      });
+    }
+
+    const discrepancyNote = confirmedTotal !== requestedTotal && d.countDiscrepancyReason
+      ? `${DISCREPANCY_REASON_LABEL[d.countDiscrepancyReason]}: ${d.countDiscrepancyNote.trim()}`
+      : null;
 
     setOutcomeSaving(true);
     try {
       // เรียก Postgres function เดียว (atomic transaction) แทนการยิง 4 ครั้งแยกกัน
       // กันปัญหาข้อมูลค้างครึ่งๆ กลางๆ เวลาเน็ต/ขั้นตอนใดขั้นตอนหนึ่งสะดุดกลางทาง
       // ดู migration-06-confirm-rescue-outcome.sql
-      const { error: rpcErr } = await supabase.rpc('confirm_rescue_outcome', {
+      const rpcArgs = {
         p_sos_report_id: d.reportId,
         p_mode: d.mode,
         p_destination_type: d.mode === 'rescued' ? d.destinationType : null,
         p_destination_shelter_id: d.mode === 'rescued' && d.destinationType === 'shelter' ? d.destinationShelterId : null,
         p_destination_note: d.mode === 'rescued' && d.destinationType !== 'shelter' ? d.destinationNote : null,
-        p_confirmed_adult: d.mode === 'rescued' ? d.confirmedAdult : 0,
-        p_confirmed_child: d.mode === 'rescued' ? d.confirmedChild : 0,
-        p_confirmed_elder: d.mode === 'rescued' ? d.confirmedElder : 0,
+        p_confirmed_adult: d.mode === 'rescued' ? confirmedAdult : 0,
+        p_confirmed_child: d.mode === 'rescued' ? confirmedChild : 0,
+        p_confirmed_elder: d.mode === 'rescued' ? confirmedElder : 0,
         p_cannot_reach_reason: d.mode === 'cannot_reach' ? d.cannotReachReason : null,
         p_notes: d.notes || null,
-      });
+        p_people: peoplePayload,
+        p_count_discrepancy_note: d.mode === 'rescued' ? discrepancyNote : null,
+      };
+      let { error: rpcErr } = await supabase.rpc('confirm_rescue_outcome_v3', rpcArgs);
+      const missingV3 = rpcErr?.code === 'PGRST202'
+        || rpcErr?.message?.includes('confirm_rescue_outcome_v3');
+      if (missingV3) {
+        ({ error: rpcErr } = await supabase.rpc('confirm_rescue_outcome_v2', rpcArgs));
+      }
       if (rpcErr) throw rpcErr;
+
+      if (d.mode === 'rescued') {
+        const hospitalTotal = d.exceptions
+          .filter(item => item.disposition === 'hospital')
+          .reduce((sum, item) => sum + item.count, 0);
+        const deceasedTotal = d.exceptions
+          .filter(item => item.disposition === 'deceased')
+          .reduce((sum, item) => sum + item.count, 0);
+        const otherTotal = d.exceptions
+          .filter(item => item.disposition === 'other_safe')
+          .reduce((sum, item) => sum + item.count, 0);
+        const primaryDestinationName = d.destinationType === 'shelter'
+          ? selectedShelter?.name ?? 'ศูนย์พักพิง'
+          : d.destinationNote.trim();
+        const destinationParts = [
+          primaryTotal > 0 ? `${primaryDestinationName} ${primaryTotal} คน` : null,
+          hospitalTotal > 0 ? `โรงพยาบาล ${hospitalTotal} คน` : null,
+          deceasedTotal > 0 ? `เสียชีวิต ${deceasedTotal} คน` : null,
+          otherTotal > 0 ? `ปลายทางอื่น ${otherTotal} คน` : null,
+        ].filter(Boolean);
+
+        const destinationStatus = d.destinationType === 'shelter' && primaryTotal > 0 ? 'at_shelter' : 'rescued';
+        const destinationShelterName = d.destinationType === 'shelter' && primaryTotal > 0 ? selectedShelter?.name ?? null : null;
+        const destinationNotes = `ปลายทางปัจจุบัน: ${destinationParts.join(' · ')}`;
+        let { error: statusError } = await supabase.rpc('sync_victim_destination', {
+          p_sos_report_id: d.reportId,
+          p_status: destinationStatus,
+          p_shelter_name: destinationShelterName,
+          p_notes: destinationNotes,
+        });
+        const missingStatusRpc = statusError?.code === 'PGRST202' || statusError?.message?.includes('sync_victim_destination');
+        if (missingStatusRpc) {
+          ({ error: statusError } = await supabase.from('victim_status').upsert({
+            sos_report_id: d.reportId,
+            status: destinationStatus,
+            shelter_name: destinationShelterName,
+            notes: destinationNotes,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'sos_report_id' }));
+        }
+        if (statusError) console.warn('บันทึกสถานะปลายทางไม่สำเร็จ', statusError.message);
+      }
 
       // อัปเดต UI local state ให้ตรงกับ DB ทันที
       const newSOSStatus = d.mode === 'rescued' ? 'rescued' : 'cannot_reach';
@@ -521,8 +771,8 @@ export default function OfficerDashboard() {
         .filter-bar{border-color:rgba(51,65,92,.1)!important;background:rgba(255,255,255,.9)!important}.filter-label{color:var(--ink)}.filter-button{min-height:40px;background:#EEF2F7!important;color:var(--slate)!important}.filter-button:hover{color:var(--blue)!important;background:#EAF3FC!important}.filter-button.selected{color:#fff!important;background:var(--blue)!important;box-shadow:0 5px 13px rgba(4,102,200,.2)}.district-filter{min-height:40px;color:var(--slate)!important;border-color:var(--line)!important}
         .mission-list{display:grid;gap:9px}.mission-row{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 112px;gap:8px;overflow:hidden;border:1px solid rgba(51,65,92,.11);border-radius:17px;background:rgba(255,255,255,.92);box-shadow:0 7px 20px rgba(0,24,69,.04);transition:.2s}.mission-row::before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:var(--muted)}.mission-row.urgency-critical::before{background:var(--midnight)}.mission-row.urgency-high::before{background:var(--blue-strong)}.mission-row.urgency-medium::before{background:var(--slate)}.mission-row:hover{transform:translateY(-2px);border-color:#BED0E2;box-shadow:0 12px 27px rgba(0,24,69,.08)}
         .mission-open{min-width:0;display:flex;align-items:center;padding:17px 12px 17px 20px;border:0;color:var(--ink);background:transparent;font:inherit;text-align:left;cursor:pointer}.mission-name{min-width:0}.mission-name strong{display:block;overflow:hidden;font-size:16px;text-overflow:ellipsis;white-space:nowrap}.mission-map{margin:8px;display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid #B8CEE4;border-radius:12px;color:var(--blue-strong);background:#F2F7FC;font:700 13px/1 inherit;cursor:pointer}.mission-map:hover{color:#fff;background:var(--blue)}.mission-map:disabled{color:var(--pale);border-color:var(--line);background:#F1F3F6;cursor:not-allowed}.mission-empty{padding:60px 20px;text-align:center;color:var(--muted);font-size:15px}
-        .mission-modal-backdrop{--blue:#0466C8;--blue-strong:#0353A4;--blue-deep:#023E7D;--navy:#002855;--ink:#001845;--midnight:#001233;--slate:#33415C;--muted:#7D8597;--line:#DDE3EC;position:fixed;inset:0;z-index:110;display:grid;place-items:center;padding:20px;background:rgba(0,18,51,.58);backdrop-filter:blur(7px)}.mission-modal{position:relative;width:min(100%,620px);max-height:min(88vh,760px);overflow:auto;border:1px solid rgba(255,255,255,.13);border-radius:25px;background:#fff;box-shadow:0 28px 80px rgba(0,18,51,.28);animation:rise-in .25s ease}.mission-modal-close{position:absolute;z-index:3;right:14px;top:14px;width:38px;height:38px;border:1px solid rgba(255,255,255,.25);border-radius:12px;color:#fff;background:rgba(255,255,255,.12);font:500 24px/1 inherit;cursor:pointer}.mission-modal-hero{padding:27px 64px 24px 25px;color:#fff;background:linear-gradient(135deg,#002855,#023E7D)}.mission-modal-kicker{color:#A9CDEC;font-size:11px;font-weight:750;letter-spacing:.08em}.mission-modal h2{margin:7px 0 3px;color:#fff!important;font-size:25px}.mission-modal-hero p{color:rgba(255,255,255,.72);font-size:13px}.mission-modal-body{display:grid;gap:13px;padding:21px}.mission-modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.mission-modal-grid>div{padding:12px;border:1px solid var(--line);border-radius:12px;background:#F8FAFD}.mission-modal-grid .wide{grid-column:1/-1}.mission-modal-grid .important{border-left:3px solid var(--blue);background:#EAF3FC}.mission-modal-grid span,.mission-modal-grid strong,.mission-modal-grid small{display:block}.mission-modal-grid span{color:var(--muted);font-size:11px}.mission-modal-grid strong{margin-top:3px;color:var(--slate);font-size:14px;line-height:1.5}.mission-modal-grid small{margin-top:2px;color:var(--muted);font-size:12px}.mission-modal-map,.mission-modal-primary{min-height:48px;border-radius:12px;font:750 14px/1 inherit;cursor:pointer}.mission-modal-map{border:1px solid #B8CEE4;color:var(--blue);background:#F1F6FC}.mission-modal-primary{border:0;color:#fff;background:linear-gradient(135deg,var(--blue),var(--blue-strong));box-shadow:0 7px 17px rgba(4,102,200,.17)}.mission-modal-primary.dark{background:var(--midnight)}.mission-modal-actions{display:grid;gap:9px}.mission-stage{padding:10px;border-radius:11px;color:var(--blue-deep);background:#EAF3FC;text-align:center;font-size:13px;font-weight:700}.mission-stage-buttons{display:grid;grid-template-columns:1fr 1fr;gap:8px}.mission-stage-buttons button{min-height:44px;border:1px solid var(--line);border-radius:11px;color:var(--slate);background:#F5F8FC;font:700 13px/1 inherit;cursor:pointer}.mission-stage-buttons button.active{color:#fff;border-color:var(--blue);background:var(--blue)}
-        .outcome-backdrop{align-items:center!important;padding:20px}.outcome-sheet{border-radius:22px!important;max-height:88vh!important;box-shadow:0 25px 70px rgba(0,18,51,.3)!important}
+        .mission-modal-backdrop{--blue:#0466C8;--blue-strong:#0353A4;--blue-deep:#023E7D;--navy:#002855;--ink:#001845;--midnight:#001233;--slate:#33415C;--muted:#7D8597;--line:#DDE3EC;position:fixed;inset:0;z-index:110;display:grid;place-items:center;padding:20px;background:rgba(0,18,51,.58);backdrop-filter:blur(7px)}.mission-modal{position:relative;width:min(100%,620px);max-height:min(88vh,760px);overflow:auto;border:1px solid rgba(255,255,255,.13);border-radius:25px;background:#fff;box-shadow:0 28px 80px rgba(0,18,51,.28);animation:rise-in .25s ease}.mission-modal-close{position:absolute;z-index:3;right:14px;top:14px;width:38px;height:38px;border:1px solid rgba(255,255,255,.25);border-radius:12px;color:#fff;background:rgba(255,255,255,.12);font:500 24px/1 inherit;cursor:pointer}.mission-modal-hero{padding:27px 64px 24px 25px;color:#fff;background:linear-gradient(135deg,#002855,#023E7D)}.mission-modal-kicker{color:#A9CDEC;font-size:12px;font-weight:750;letter-spacing:.08em}.mission-modal h2{margin:7px 0 3px;color:#fff!important;font-size:25px}.mission-modal-hero p{color:rgba(255,255,255,.72);font-size:14px}.mission-modal-body{display:grid;gap:13px;padding:21px}.mission-modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.mission-modal-grid>div{padding:12px;border:1px solid var(--line);border-radius:12px;background:#F8FAFD}.mission-modal-grid .wide{grid-column:1/-1}.mission-modal-grid .important{border-left:3px solid var(--blue);background:#EAF3FC}.mission-modal-grid span,.mission-modal-grid strong,.mission-modal-grid small{display:block}.mission-modal-grid span{color:var(--muted);font-size:13px}.mission-modal-grid strong{margin-top:3px;color:var(--slate);font-size:15px;line-height:1.5}.mission-modal-grid small{margin-top:2px;color:var(--muted);font-size:13px}.mission-modal-map,.mission-modal-primary{min-height:48px;border-radius:12px;font:750 14px/1 inherit;cursor:pointer}.mission-modal-map{border:1px solid #B8CEE4;color:var(--blue);background:#F1F6FC}.mission-modal-primary{border:0;color:#fff;background:linear-gradient(135deg,var(--blue),var(--blue-strong));box-shadow:0 7px 17px rgba(4,102,200,.17)}.mission-modal-primary.dark{background:var(--midnight)}.mission-modal-actions{display:grid;gap:9px}.mission-stage{padding:11px;border-radius:11px;color:var(--blue-deep);background:#EAF3FC;text-align:center;font-size:14px;font-weight:700}.mission-stage-buttons{display:grid;grid-template-columns:1fr;gap:8px}.mission-stage-buttons button{min-height:46px;border:1px solid var(--line);border-radius:11px;color:var(--slate);background:#F5F8FC;font:700 14px/1 inherit;cursor:pointer}.mission-stage-complete{display:grid;place-items:center;min-height:44px;border-radius:11px;color:#0353A4;background:#EAF3FC;font-size:14px;font-weight:750}
+        .outcome-backdrop{align-items:center!important;padding:20px}.outcome-sheet{border-radius:22px!important;max-width:540px!important;max-height:88vh!important;box-shadow:0 25px 70px rgba(0,18,51,.3)!important}.outcome-sheet input,.outcome-sheet select,.outcome-sheet textarea,.outcome-sheet button{font-size:14px!important}.outcome-sheet [style*="font-size: 10"],.outcome-sheet [style*="font-size: 11"],.outcome-sheet [style*="font-size: 12"]{font-size:13px!important}
         @media(max-width:760px){.rescue-app{padding-left:0;padding-bottom:0}.rescue-app>header{padding:13px 14px!important}.rescue-app>header>div>div:last-child{gap:7px!important}.rescue-app>header button{padding:8px 9px!important;font-size:12px!important}.dashboard-overview{grid-template-columns:1fr}.operation-hero{min-height:192px;padding:22px}.rescue-app main{padding:17px 13px 28px!important}.filter-label{width:100%;margin:0 4px 2px}.district-filter{margin-left:0!important;width:100%}.mission-row{grid-template-columns:minmax(0,1fr) 86px}.mission-open{padding-left:16px}.mission-map{font-size:12px}.mission-modal-backdrop{padding:11px}.mission-modal{max-height:92vh;border-radius:20px}.mission-modal-grid{grid-template-columns:1fr}.mission-modal-grid .wide{grid-column:auto}}
       `}</style>
 
@@ -762,10 +1012,15 @@ export default function OfficerDashboard() {
 
                 {item.status === 'assigned' && (
                   <div className="mission-modal-actions">
-                    <div className="mission-stage">{stage === 'on_scene' ? 'ถึงที่เกิดเหตุแล้ว' : stage === 'en_route' ? 'กำลังเดินทาง' : 'รับงานแล้ว'}</div>
+                    <div className="mission-stage">{stage === 'on_scene' ? 'ถึงจุดเกิดเหตุและกำลังช่วยเหลือ' : stage === 'en_route' ? 'อยู่ระหว่างเดินทางไปจุดเกิดเหตุ' : 'รับงานแล้ว กรุณาเริ่มเดินทาง'}</div>
                     <div className="mission-stage-buttons">
-                      <button className={stage === 'en_route' ? 'active' : ''} type="button" onClick={() => updateAssignment(item.id, 'assigned', 'en_route')} disabled={isLoading}>กำลังเดินทาง</button>
-                      <button className={stage === 'on_scene' ? 'active' : ''} type="button" onClick={() => updateAssignment(item.id, 'assigned', 'on_scene')} disabled={isLoading}>ถึงที่เกิดเหตุ</button>
+                      {stage !== 'en_route' && stage !== 'on_scene' && (
+                        <button type="button" onClick={() => updateAssignment(item.id, 'assigned', 'en_route')} disabled={isLoading}>เริ่มเดินทาง</button>
+                      )}
+                      {stage === 'en_route' && (
+                        <button type="button" onClick={() => updateAssignment(item.id, 'assigned', 'on_scene')} disabled={isLoading}>ถึงจุดเกิดเหตุแล้ว</button>
+                      )}
+                      {stage === 'on_scene' && <span className="mission-stage-complete">พร้อมบันทึกผลการช่วยเหลือ</span>}
                     </div>
                     <button className="mission-modal-primary dark" type="button" onClick={() => { setSelectedReportId(null); openOutcomeModal(item); }} disabled={isLoading}>ยืนยันผลการช่วยเหลือ</button>
                   </div>
@@ -822,17 +1077,21 @@ export default function OfficerDashboard() {
             {/* Step 2a: ช่วยได้ -> เลือกปลายทาง */}
             {outcomeDraft.mode === 'rescued' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#374151' }}>นำส่งไปที่ไหน?</div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: '#001845' }}>1. เลือกปลายทางหลัก</div>
                 <select
                   value={outcomeDraft.destinationType ?? ''}
-                  onChange={e => setOutcomeDraft({ ...outcomeDraft, destinationType: e.target.value as any })}
-                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #E5E7EB', fontSize: 14, fontFamily: 'inherit' }}
+                  onChange={e => setOutcomeDraft({
+                    ...outcomeDraft,
+                    destinationType: e.target.value as OutcomeDraft['destinationType'],
+                    destinationShelterId: e.target.value === 'shelter' ? outcomeDraft.destinationShelterId : '',
+                  })}
+                  style={{ minHeight: 46, padding: '10px 12px', borderRadius: 12, border: '1px solid #C9D6E5', fontSize: 14, fontFamily: 'inherit', color: '#001845', background: '#fff' }}
                 >
                   <option value="">— เลือก —</option>
-                  <option value="shelter">🏠 ศูนย์พักพิง</option>
-                  <option value="relative_home">👨‍👩‍👧 บ้านญาติ</option>
-                  <option value="hotel">🏨 โรงแรม</option>
-                  <option value="other_safe">📍 ปลอดภัย แต่ไม่ได้อยู่ศูนย์ (อื่นๆ)</option>
+                  <option value="shelter">ศูนย์พักพิง</option>
+                  <option value="relative_home">บ้านญาติ</option>
+                  <option value="hotel">โรงแรม</option>
+                  <option value="other_safe">พื้นที่ปลอดภัยอื่น / ทุกคนแยกปลายทาง</option>
                 </select>
 
                 {outcomeDraft.destinationType === 'shelter' && (
@@ -840,44 +1099,190 @@ export default function OfficerDashboard() {
                     <select
                       value={outcomeDraft.destinationShelterId}
                       onChange={e => setOutcomeDraft({ ...outcomeDraft, destinationShelterId: e.target.value })}
-                      style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #E5E7EB', fontSize: 14, fontFamily: 'inherit' }}
+                      style={{ minHeight: 46, padding: '10px 12px', borderRadius: 12, border: '1px solid #C9D6E5', fontSize: 14, fontFamily: 'inherit', color: '#001845', background: '#fff' }}
                     >
                       <option value="">— เลือกศูนย์พักพิง —</option>
                       {shelters.map(s => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
+                        <option
+                          key={s.id}
+                          value={s.id}
+                          disabled={(s.capacity ?? 0) < 1 || (s.current_occupancy ?? 0) >= (s.capacity ?? 0)}
+                        >
+                          {s.name} — {(s.capacity ?? 0) > 0
+                            ? `${Math.max((s.capacity ?? 0) - (s.current_occupancy ?? 0), 0)}/${s.capacity} ที่ว่าง`
+                            : 'ยังไม่กำหนดความจุ'}
+                        </option>
                       ))}
                     </select>
 
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#374151', marginTop: 4 }}>
-                      ยืนยันจำนวนที่นำส่งจริง
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                      {(['confirmedAdult', 'confirmedChild', 'confirmedElder'] as const).map((key, i) => (
-                        <div key={key}>
-                          <div style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 4 }}>
-                            {['ผู้ใหญ่', 'เด็ก', 'สูงอายุ'][i]}
-                          </div>
-                          <input
-                            type="number" min={0}
-                            value={outcomeDraft[key]}
-                            onChange={e => setOutcomeDraft({ ...outcomeDraft, [key]: Number(e.target.value) })}
-                            style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #E5E7EB', fontSize: 14, fontFamily: 'inherit' }}
-                          />
+                    {(() => {
+                      const selected = shelters.find(shelter => shelter.id === outcomeDraft.destinationShelterId);
+                      if (!selected) return null;
+                      const capacity = selected.capacity ?? 0;
+                      const occupancy = selected.current_occupancy ?? 0;
+                      const available = Math.max(capacity - occupancy, 0);
+                      return (
+                        <div style={{
+                          padding: '11px 12px', borderRadius: 12,
+                          border: `1px solid ${capacity > 0 ? '#B8CEE4' : '#F2C97D'}`,
+                          background: capacity > 0 ? '#F2F7FC' : '#FFF8E8',
+                          color: '#33415C', fontSize: 12, lineHeight: 1.55,
+                        }}>
+                          <strong style={{ display: 'block', color: '#001845', fontSize: 13 }}>{selected.name}</strong>
+                          {capacity > 0
+                            ? `ปัจจุบัน ${occupancy} คน · รับได้สูงสุด ${capacity} คน · เหลือ ${available} คน`
+                            : 'ยังไม่กำหนดจำนวนที่รับได้สูงสุด กรุณาตรวจสอบกับศูนย์ก่อนนำส่ง'}
                         </div>
-                      ))}
-                    </div>
+                      );
+                    })()}
                   </>
                 )}
 
                 {outcomeDraft.destinationType && outcomeDraft.destinationType !== 'shelter' && (
                   <textarea
-                    placeholder="ระบุรายละเอียด เช่น ชื่อ-ที่อยู่บ้านญาติ / ชื่อโรงแรม"
+                    placeholder="ระบุชื่อและรายละเอียดปลายทาง เช่น ชื่อบ้านญาติหรือชื่อโรงแรม"
                     value={outcomeDraft.destinationNote}
                     onChange={e => setOutcomeDraft({ ...outcomeDraft, destinationNote: e.target.value })}
                     rows={2}
-                    style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #E5E7EB', fontSize: 14, fontFamily: 'inherit', resize: 'vertical' }}
+                    style={{ padding: '10px 12px', borderRadius: 12, border: '1px solid #C9D6E5', fontSize: 14, fontFamily: 'inherit', resize: 'vertical' }}
                   />
                 )}
+
+                {outcomeDraft.destinationType && (() => {
+                  const requestedTotal = outcomeDraft.requestedAdult + outcomeDraft.requestedChild + outcomeDraft.requestedElder;
+                  const confirmedTotal = outcomeDraft.confirmedAdult + outcomeDraft.confirmedChild + outcomeDraft.confirmedElder;
+                  const hospitalTotal = outcomeDraft.exceptions.filter(item => item.disposition === 'hospital').reduce((sum, item) => sum + item.count, 0);
+                  const deceasedTotal = outcomeDraft.exceptions.filter(item => item.disposition === 'deceased').reduce((sum, item) => sum + item.count, 0);
+                  const otherTotal = outcomeDraft.exceptions.filter(item => item.disposition === 'other_safe').reduce((sum, item) => sum + item.count, 0);
+                  const primaryTotal = Math.max(confirmedTotal - hospitalTotal - deceasedTotal - otherTotal, 0);
+                  const primaryLabel = outcomeDraft.destinationType === 'shelter'
+                    ? 'ไปศูนย์พักพิง'
+                    : outcomeDraft.destinationType === 'relative_home'
+                      ? 'ไปบ้านญาติ'
+                      : outcomeDraft.destinationType === 'hotel'
+                        ? 'ไปโรงแรม'
+                        : 'ไปพื้นที่ปลอดภัย';
+
+                  return (
+                    <>
+                      <div style={{ height: 1, background: '#DDE3EC', margin: '6px 0 2px' }} />
+                      <div style={{ display: 'flex', alignItems: 'start', justifyContent: 'space-between', gap: 10 }}>
+                        <div>
+                          <div style={{ fontSize: 14, fontWeight: 800, color: '#001845' }}>2. ตรวจจำนวนที่พบจริง</div>
+                          <div style={{ marginTop: 3, fontSize: 12, color: '#5C677D', lineHeight: 1.5 }}>
+                            ไม่ต้องกรอกชื่อ ระบบจะสร้างรหัสชั่วคราวให้แต่ละคนอัตโนมัติ
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setOutcomeDraft({
+                            ...outcomeDraft,
+                            confirmedAdult: outcomeDraft.requestedAdult,
+                            confirmedChild: outcomeDraft.requestedChild,
+                            confirmedElder: outcomeDraft.requestedElder,
+                            countDiscrepancyReason: '',
+                            countDiscrepancyNote: '',
+                          })}
+                          style={{ flex: '0 0 auto', border: 0, borderRadius: 999, padding: '6px 10px', color: '#0353A4', background: '#EAF3FC', fontFamily: 'inherit', fontSize: 11, fontWeight: 800, cursor: 'pointer' }}
+                        >
+                          ตรงตามคำร้อง
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 7 }}>
+                        {([
+                          ['adult', 'ผู้ใหญ่', outcomeDraft.confirmedAdult, outcomeDraft.requestedAdult],
+                          ['child', 'เด็ก', outcomeDraft.confirmedChild, outcomeDraft.requestedChild],
+                          ['elder', 'สูงอายุ', outcomeDraft.confirmedElder, outcomeDraft.requestedElder],
+                        ] as const).map(([ageGroup, label, value, requested]) => (
+                          <div key={ageGroup} style={{ padding: 9, borderRadius: 12, border: '1px solid #DDE3EC', background: '#F8FAFD', textAlign: 'center' }}>
+                            <span style={{ display: 'block', color: '#5C677D', fontSize: 11 }}>{label} · แจ้ง {requested}</span>
+                            <div style={{ display: 'grid', gridTemplateColumns: '30px 1fr 30px', alignItems: 'center', gap: 3, marginTop: 7 }}>
+                              <button type="button" onClick={() => changeConfirmedCount(ageGroup, -1)} style={{ width: 30, height: 30, border: '1px solid #C9D6E5', borderRadius: 9, background: '#fff', color: '#33415C', fontSize: 18, cursor: 'pointer' }}>−</button>
+                              <strong style={{ color: '#001845', fontSize: 20 }}>{value}</strong>
+                              <button type="button" onClick={() => changeConfirmedCount(ageGroup, 1)} style={{ width: 30, height: 30, border: '1px solid #89B4DD', borderRadius: 9, background: '#EAF3FC', color: '#0353A4', fontSize: 18, cursor: 'pointer' }}>+</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div style={{ padding: '10px 12px', borderRadius: 12, background: confirmedTotal === requestedTotal ? '#EDF7FF' : '#FFF8E8', border: `1px solid ${confirmedTotal === requestedTotal ? '#B8CEE4' : '#F2C97D'}`, color: '#33415C', fontSize: 12 }}>
+                        คำร้อง {requestedTotal} คน · พบจริง <strong style={{ color: '#001845' }}>{confirmedTotal} คน</strong>
+                      </div>
+
+                      <div style={{ height: 1, background: '#DDE3EC', margin: '6px 0 2px' }} />
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: '#001845' }}>3. มีใครแยกไปปลายทางอื่นหรือไม่</div>
+                        <div style={{ marginTop: 3, color: '#5C677D', fontSize: 12, lineHeight: 1.5 }}>
+                          หากทุกคนไปปลายทางหลัก ไม่ต้องเพิ่มรายการ กรอกเฉพาะผู้ที่ไปโรงพยาบาล เสียชีวิต หรือไปที่อื่น
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 6 }}>
+                        {[
+                          [primaryLabel, primaryTotal, '#EAF3FC', '#0353A4'],
+                          ['โรงพยาบาล', hospitalTotal, '#FFF0F0', '#B42318'],
+                          ['เสียชีวิต', deceasedTotal, '#F1F3F5', '#001845'],
+                          ['ที่อื่น', otherTotal, '#F2F4F7', '#33415C'],
+                        ].map(([label, value, background, color]) => (
+                          <div key={String(label)} style={{ padding: '8px 5px', borderRadius: 10, background: String(background), textAlign: 'center' }}>
+                            <strong style={{ display: 'block', color: String(color), fontSize: 17 }}>{String(value)}</strong>
+                            <span style={{ color: '#667085', fontSize: 10 }}>{String(label)}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {outcomeDraft.exceptions.map((item, index) => (
+                        <div key={item.clientId} style={{ padding: 12, border: '1px solid #B8CEE4', borderRadius: 14, background: '#F8FBFF' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 9 }}>
+                            <strong style={{ color: '#001845', fontSize: 13 }}>รายการแยกปลายทาง {index + 1}</strong>
+                            <button type="button" onClick={() => removeDeliveryException(item.clientId)} style={{ border: 0, color: '#9A3412', background: 'transparent', fontFamily: 'inherit', fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>ลบรายการ</button>
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
+                            <select value={item.disposition} onChange={event => updateDeliveryException(item.clientId, { disposition: event.target.value as ExceptionDisposition, destinationName: '' })} style={{ minWidth: 0, padding: '10px 9px', borderRadius: 10, border: '1px solid #C9D6E5', color: '#001845', background: '#fff', fontSize: 12, fontFamily: 'inherit' }}>
+                              <option value="hospital">ไปโรงพยาบาล</option>
+                              <option value="deceased">เสียชีวิต</option>
+                              <option value="other_safe">ปลายทางอื่น</option>
+                            </select>
+                            <select value={item.ageGroup} onChange={event => updateDeliveryException(item.clientId, { ageGroup: event.target.value as AgeGroup })} style={{ minWidth: 0, padding: '10px 9px', borderRadius: 10, border: '1px solid #C9D6E5', color: '#33415C', background: '#fff', fontSize: 12, fontFamily: 'inherit' }}>
+                              {(Object.keys(AGE_GROUP_LABEL) as AgeGroup[]).map(group => <option key={group} value={group}>{AGE_GROUP_LABEL[group]}</option>)}
+                            </select>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 8, padding: '8px 10px', borderRadius: 10, background: '#fff', border: '1px solid #DDE3EC' }}>
+                            <span style={{ color: '#33415C', fontSize: 12, fontWeight: 700 }}>จำนวนคน</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                              <button type="button" onClick={() => updateDeliveryException(item.clientId, { count: Math.max(1, item.count - 1) })} style={{ width: 30, height: 30, border: '1px solid #C9D6E5', borderRadius: 9, background: '#fff', fontSize: 17, cursor: 'pointer' }}>−</button>
+                              <strong style={{ minWidth: 22, textAlign: 'center', color: '#001845', fontSize: 17 }}>{item.count}</strong>
+                              <button type="button" onClick={() => updateDeliveryException(item.clientId, { count: item.count + 1 })} style={{ width: 30, height: 30, border: '1px solid #89B4DD', borderRadius: 9, background: '#EAF3FC', color: '#0353A4', fontSize: 17, cursor: 'pointer' }}>+</button>
+                            </div>
+                          </div>
+                          <div style={{ display: 'grid', gap: 7, marginTop: 8 }}>
+                            <input value={item.destinationName} onChange={event => updateDeliveryException(item.clientId, { destinationName: event.target.value })} placeholder={item.disposition === 'hospital' ? 'ชื่อโรงพยาบาล *' : item.disposition === 'deceased' ? 'สถานที่หรือหน่วยงานรับต่อ *' : 'ระบุปลายทาง *'} maxLength={160} style={{ padding: '10px 11px', borderRadius: 10, border: `1px solid ${item.disposition === 'hospital' ? '#F0B5B5' : '#C9D6E5'}`, fontSize: 13, fontFamily: 'inherit' }} />
+                            {item.count === 1 && <input value={item.referenceName} onChange={event => updateDeliveryException(item.clientId, { referenceName: event.target.value })} placeholder="ชื่อหรือลักษณะอ้างอิง (ถ้าทราบ)" maxLength={120} style={{ padding: '10px 11px', borderRadius: 10, border: '1px solid #DDE3EC', fontSize: 12, fontFamily: 'inherit' }} />}
+                            <input value={item.notes} onChange={event => updateDeliveryException(item.clientId, { notes: event.target.value })} placeholder={item.disposition === 'hospital' ? 'อาการเบื้องต้นหรือหน่วยที่รับช่วงต่อ (ถ้ามี)' : 'รายละเอียดเพิ่มเติม (ถ้ามี)'} maxLength={300} style={{ padding: '10px 11px', borderRadius: 10, border: '1px solid #DDE3EC', fontSize: 12, fontFamily: 'inherit' }} />
+                          </div>
+                        </div>
+                      ))}
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6 }}>
+                        <button type="button" onClick={() => addDeliveryException('hospital')} style={{ minHeight: 42, border: '1px solid #F0B5B5', borderRadius: 11, color: '#B42318', background: '#FFF7F7', fontFamily: 'inherit', fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>+ โรงพยาบาล</button>
+                        <button type="button" onClick={() => addDeliveryException('deceased')} style={{ minHeight: 42, border: '1px solid #C9D0DA', borderRadius: 11, color: '#33415C', background: '#F5F6F8', fontFamily: 'inherit', fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>+ เสียชีวิต</button>
+                        <button type="button" onClick={() => addDeliveryException('other_safe')} style={{ minHeight: 42, border: '1px solid #9AB7D3', borderRadius: 11, color: '#0353A4', background: '#F2F7FC', fontFamily: 'inherit', fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>+ ที่อื่น</button>
+                      </div>
+
+                      {confirmedTotal !== requestedTotal && (
+                        <div style={{ padding: 11, border: '1px solid #F4C7A1', borderRadius: 12, background: '#FFF8E8' }}>
+                          <div style={{ color: '#9A3412', fontSize: 12, fontWeight: 800 }}>จำนวนไม่ตรงกับคำร้องเดิม</div>
+                          <select value={outcomeDraft.countDiscrepancyReason} onChange={event => setOutcomeDraft({ ...outcomeDraft, countDiscrepancyReason: event.target.value as OutcomeDraft['countDiscrepancyReason'] })} style={{ width: '100%', marginTop: 8, padding: '10px', border: '1px solid #E4B98D', borderRadius: 9, background: '#fff', color: '#33415C', fontFamily: 'inherit', fontSize: 12 }}>
+                            <option value="">— เลือกเหตุผล —</option>
+                            {Object.entries(DISCREPANCY_REASON_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                          </select>
+                          <textarea value={outcomeDraft.countDiscrepancyNote} onChange={event => setOutcomeDraft({ ...outcomeDraft, countDiscrepancyNote: event.target.value })} placeholder="รายละเอียด เช่น ผู้ใหญ่ 1 คนไปโรงพยาบาลก่อนทีมกู้ภัยมาถึง" rows={2} style={{ width: '100%', marginTop: 7, padding: '9px 10px', border: '1px solid #E4B98D', borderRadius: 9, resize: 'vertical', fontFamily: 'inherit', fontSize: 12 }} />
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             )}
 

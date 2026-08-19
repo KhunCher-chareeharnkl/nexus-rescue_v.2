@@ -8,8 +8,10 @@ import {
   BarChart3,
   Building2,
   CheckCircle2,
+  ClipboardList,
   Clock3,
   Footprints,
+  Hospital,
   History,
   Home,
   LayoutDashboard,
@@ -19,6 +21,7 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
+  Skull,
   Truck,
   UserRound,
   Users,
@@ -50,6 +53,8 @@ interface Shelter {
 
 interface Occupant {
   id: string;
+  sos_report_id?: string | null;
+  assignment_id?: string | null;
   full_name: string;
   phone?: string | null;
   adult_count: number;
@@ -61,6 +66,32 @@ interface Occupant {
   exit_date?: string | null;
   exit_destination?: ExitDestination | null;
   exit_note?: string | null;
+}
+
+interface DeliveryPerson {
+  id: string;
+  sequence_no: number;
+  full_name: string;
+  age_group: 'adult' | 'child' | 'elder';
+  is_primary_destination: boolean;
+  destination_type: 'shelter' | 'hospital' | 'deceased' | 'relative_home' | 'hotel' | 'other_safe';
+  destination_name?: string | null;
+  notes?: string | null;
+}
+
+interface DeliveryManifest {
+  id: string;
+  sos_report_id: string;
+  requested_adult_count: number;
+  requested_child_count: number;
+  requested_elder_count: number;
+  accounted_total: number;
+  primary_destination_total: number;
+  hospital_total: number;
+  deceased_total: number;
+  count_discrepancy_note?: string | null;
+  created_at: string;
+  rescue_delivery_people: DeliveryPerson[];
 }
 
 type ExitDestination = 'home' | 'relative_home' | 'other_shelter' | 'other';
@@ -128,6 +159,9 @@ export default function ShelterStaffDashboard() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [addDraft, setAddDraft] = useState<AddDraft>(EMPTY_ADD_DRAFT);
   const [exitDraft, setExitDraft] = useState<ExitDraft | null>(null);
+  const [manifests, setManifests] = useState<DeliveryManifest[]>([]);
+  const [selectedManifest, setSelectedManifest] = useState<DeliveryManifest | null>(null);
+  const [capacityDraft, setCapacityDraft] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -185,7 +219,7 @@ export default function ShelterStaffDashboard() {
     if (manual) setRefreshing(true);
 
     try {
-      const [shelterResult, occupantsResult] = await Promise.all([
+      const [shelterResult, occupantsResult, manifestsResult] = await Promise.all([
         supabase
           .from('shelters')
           .select('id, name, address, province, capacity')
@@ -193,17 +227,29 @@ export default function ShelterStaffDashboard() {
           .maybeSingle(),
         supabase
           .from('shelter_occupants')
-          .select('id, full_name, phone, adult_count, child_count, elder_count, entry_source, status, entry_date, exit_date, exit_destination, exit_note')
+          .select('id, sos_report_id, assignment_id, full_name, phone, adult_count, child_count, elder_count, entry_source, status, entry_date, exit_date, exit_destination, exit_note')
           .eq('shelter_id', shelterId)
           .order('entry_date', { ascending: false }),
+        supabase
+          .from('rescue_delivery_manifests')
+          .select('id, sos_report_id, requested_adult_count, requested_child_count, requested_elder_count, accounted_total, primary_destination_total, hospital_total, deceased_total, count_discrepancy_note, created_at, rescue_delivery_people(id, sequence_no, full_name, age_group, is_primary_destination, destination_type, destination_name, notes)')
+          .eq('shelter_id', shelterId)
+          .order('created_at', { ascending: false }),
       ]);
 
       if (shelterResult.error) throw shelterResult.error;
       if (!shelterResult.data) throw new Error('ไม่พบข้อมูลศูนย์พักพิงนี้');
       if (occupantsResult.error) throw occupantsResult.error;
 
-      setShelter(shelterResult.data as Shelter);
+      const nextShelter = shelterResult.data as Shelter;
+      setShelter(nextShelter);
+      setCapacityDraft(String(nextShelter.capacity ?? ''));
       setOccupants((occupantsResult.data as Occupant[] | null) ?? []);
+      if (!manifestsResult.error) {
+        setManifests((manifestsResult.data as DeliveryManifest[] | null) ?? []);
+      } else if (!isMissingManifestSchema(manifestsResult.error)) {
+        throw manifestsResult.error;
+      }
       setLastUpdated(new Date());
       setDataError(null);
       if (manual) setNotice({ type: 'success', message: 'อัปเดตข้อมูลล่าสุดแล้ว' });
@@ -247,20 +293,21 @@ export default function ShelterStaffDashboard() {
   }, [notice]);
 
   useEffect(() => {
-    if (!showAddForm && !exitDraft) return;
+    if (!showAddForm && !exitDraft && !selectedManifest) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || saving) return;
       setShowAddForm(false);
       setExitDraft(null);
+      setSelectedManifest(null);
     };
     window.addEventListener('keydown', closeOnEscape);
     return () => {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener('keydown', closeOnEscape);
     };
-  }, [exitDraft, saving, showAddForm]);
+  }, [exitDraft, saving, selectedManifest, showAddForm]);
 
   useEffect(() => {
     if (loading) return;
@@ -278,6 +325,10 @@ export default function ShelterStaffDashboard() {
   }, [loading]);
 
   const currentOccupants = useMemo(() => occupants.filter(item => item.status === 'in_shelter'), [occupants]);
+  const manifestBySosReportId = useMemo(
+    () => new Map(manifests.map(manifest => [manifest.sos_report_id, manifest])),
+    [manifests],
+  );
   const currentStats = useMemo(() => currentOccupants.reduce(
     (total, item) => ({
       people: total.people + getMemberTotal(item),
@@ -314,18 +365,59 @@ export default function ShelterStaffDashboard() {
       });
   }, [occupants, search, tab]);
 
+  const saveCapacity = async () => {
+    if (!shelterId || !profile || saving) return;
+    const nextCapacity = Math.floor(Number(capacityDraft));
+    if (!Number.isFinite(nextCapacity) || nextCapacity < 1) {
+      setNotice({ type: 'error', message: 'กรุณาระบุความจุอย่างน้อย 1 คน' });
+      return;
+    }
+    if (nextCapacity < currentStats.people) {
+      setNotice({ type: 'error', message: `ความจุต้องไม่น้อยกว่าผู้ที่อยู่ในศูนย์ปัจจุบัน ${currentStats.people} คน` });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      let { error } = await supabase.rpc('update_shelter_capacity', {
+        p_shelter_id: shelterId,
+        p_capacity: nextCapacity,
+      });
+      const missingRpc = error?.code === 'PGRST202' || error?.message?.includes('update_shelter_capacity');
+      if (missingRpc) {
+        ({ error } = await supabase.from('shelters').update({ capacity: nextCapacity }).eq('id', shelterId));
+      }
+      if (error) throw error;
+      setShelter(current => current ? { ...current, capacity: nextCapacity } : current);
+      setCapacityDraft(String(nextCapacity));
+      setNotice({ type: 'success', message: `อัปเดตความจุศูนย์เป็น ${nextCapacity.toLocaleString('th-TH')} คนแล้ว` });
+    } catch (error) {
+      setNotice({ type: 'error', message: getErrorMessage(error, 'อัปเดตความจุศูนย์ไม่สำเร็จ') });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const submitAddOccupant = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!profile || saving) return;
 
     const fullName = addDraft.fullName.trim();
     const counts = [addDraft.adult, addDraft.child, addDraft.elder].map(value => Math.max(0, Math.floor(Number(value) || 0)));
+    const incomingTotal = counts.reduce((sum, value) => sum + value, 0);
     if (!fullName) {
       setNotice({ type: 'error', message: 'กรุณากรอกชื่อผู้ลงทะเบียน' });
       return;
     }
-    if (counts.reduce((sum, value) => sum + value, 0) < 1) {
+    if (incomingTotal < 1) {
       setNotice({ type: 'error', message: 'จำนวนผู้เข้าพักต้องมีอย่างน้อย 1 คน' });
+      return;
+    }
+    if (hasCapacity && currentStats.people + incomingTotal > capacity) {
+      setNotice({
+        type: 'error',
+        message: `ศูนย์เหลือที่ว่าง ${Math.max(capacity - currentStats.people, 0)} คน ไม่สามารถรับเพิ่ม ${incomingTotal} คนได้`,
+      });
       return;
     }
 
@@ -375,20 +467,18 @@ export default function ShelterStaffDashboard() {
 
     setSaving(true);
     try {
-      const { data, error } = await supabase
-        .from('shelter_occupants')
-        .update({
-          status: 'exited',
-          exit_date: exitDateTime.toISOString(),
-          exit_destination: exitDraft.destination,
-          exit_note: exitDraft.note.trim() || null,
-        })
-        .eq('id', exitDraft.occupantId)
-        .eq('status', 'in_shelter')
-        .select('id')
-        .maybeSingle();
-      if (error) throw error;
-      if (!data) throw new Error('รายการนี้ถูกดำเนินการไปแล้ว กรุณารีเฟรชข้อมูล');
+      const { error } = await supabase.rpc('confirm_shelter_exit', {
+        p_occupant_id: exitDraft.occupantId,
+        p_exit_destination: exitDraft.destination,
+        p_exit_at: exitDateTime.toISOString(),
+        p_exit_note: exitDraft.note.trim() || null,
+      });
+      if (error) {
+        if (error.code === 'PGRST202' || error.message?.includes('confirm_shelter_exit')) {
+          throw new Error('ยังไม่ได้ติดตั้งระบบยืนยันออกจากศูนย์ กรุณารัน migration 202608190001 ก่อนใช้งาน');
+        }
+        throw error;
+      }
 
       const name = exitDraft.fullName;
       setExitDraft(null);
@@ -535,7 +625,15 @@ export default function ShelterStaffDashboard() {
                   <div><strong>{hasCapacity ? `${capacityRate}%` : '—'}</strong><span>{hasCapacity ? 'ใช้งานแล้ว' : 'ไม่พบความจุ'}</span></div>
                 </div>
                 <p><strong>{currentStats.people.toLocaleString('th-TH')}</strong> <span>/ {hasCapacity ? capacity.toLocaleString('th-TH') : '—'} คน</span></p>
-                <small>{remainingCapacity === null ? 'กรุณาให้แอดมินกำหนดความจุศูนย์' : remainingCapacity === 0 ? 'ไม่มีที่ว่างคงเหลือ' : `รองรับได้อีก ${remainingCapacity.toLocaleString('th-TH')} คน`}</small>
+                <small>{remainingCapacity === null ? 'กรุณากำหนดความจุที่ศูนย์รองรับได้' : remainingCapacity === 0 ? 'ไม่มีที่ว่างคงเหลือ' : `รองรับได้อีก ${remainingCapacity.toLocaleString('th-TH')} คน`}</small>
+                <div className={styles.capacityEditor}>
+                  <label htmlFor="shelter-capacity">จำนวนที่ศูนย์รับได้สูงสุด</label>
+                  <div>
+                    <input id="shelter-capacity" type="number" inputMode="numeric" min={Math.max(1, currentStats.people)} value={capacityDraft} onChange={event => setCapacityDraft(event.target.value.replace(/\D/g, ''))} placeholder="เช่น 800" />
+                    <button type="button" onClick={saveCapacity} disabled={saving}>{saving ? 'กำลังบันทึก' : 'บันทึก'}</button>
+                  </div>
+                  <span>เจ้าหน้าที่ศูนย์แก้ไขได้ และห้ามต่ำกว่าจำนวนคนที่อยู่จริง</span>
+                </div>
               </section>
 
               <section className={styles.sourceCard}>
@@ -569,7 +667,13 @@ export default function ShelterStaffDashboard() {
                 {filteredOccupants.length === 0 ? (
                   <div className={styles.emptyState}><span><Users size={24} /></span><strong>{search ? 'ไม่พบรายชื่อที่ค้นหา' : 'ยังไม่มีรายการในหมวดนี้'}</strong><small>{search ? 'ลองค้นหาด้วยชื่อหรือเบอร์โทรอื่น' : 'รายการใหม่จะแสดงพร้อมวันและเวลาโดยอัตโนมัติ'}</small></div>
                 ) : filteredOccupants.map(occupant => (
-                  <OccupantRow key={occupant.id} occupant={occupant} onExit={() => openExitDialog(occupant)} />
+                  <OccupantRow
+                    key={occupant.id}
+                    occupant={occupant}
+                    manifest={occupant.sos_report_id ? manifestBySosReportId.get(occupant.sos_report_id) : undefined}
+                    onViewManifest={setSelectedManifest}
+                    onExit={() => openExitDialog(occupant)}
+                  />
                 ))}
               </div>
             </div>
@@ -609,6 +713,75 @@ export default function ShelterStaffDashboard() {
           </section>
         </div>
       )}
+
+      {selectedManifest && (
+        <div className={styles.modalBackdrop} onMouseDown={event => { if (event.target === event.currentTarget) setSelectedManifest(null); }}>
+          <section className={`${styles.modal} ${styles.manifestModal}`} role="dialog" aria-modal="true" aria-labelledby="manifest-title">
+            <button className={styles.modalClose} onClick={() => setSelectedManifest(null)} aria-label="ปิด"><X size={19} /></button>
+            <div className={styles.modalHeading}>
+              <span><ClipboardList size={20} /></span>
+              <div>
+                <small>DELIVERY MANIFEST</small>
+                <h2 id="manifest-title">บัญชีรายชื่อการนำส่ง</h2>
+                <p>ตรวจสอบจำนวนจากคำร้องเทียบกับปลายทางจริงของทุกคน</p>
+              </div>
+            </div>
+
+            <div className={styles.manifestSummary}>
+              <div><small>คำร้องเดิม</small><strong>{getManifestRequestedTotal(selectedManifest)} คน</strong></div>
+              <div><small>มีข้อมูลปลายทาง</small><strong>{selectedManifest.accounted_total} คน</strong></div>
+              <div><small>มาถึงศูนย์</small><strong>{selectedManifest.primary_destination_total} คน</strong></div>
+              <div className={selectedManifest.hospital_total > 0 ? styles.manifestHospital : ''}><small>ส่งโรงพยาบาล</small><strong>{selectedManifest.hospital_total} คน</strong></div>
+              <div className={selectedManifest.deceased_total > 0 ? styles.manifestRed : ''}><small>เสียชีวิต</small><strong>{selectedManifest.deceased_total} คน</strong></div>
+            </div>
+
+            {(selectedManifest.accounted_total !== getManifestRequestedTotal(selectedManifest) || selectedManifest.count_discrepancy_note) && (
+              <div className={styles.manifestWarning}>
+                <AlertCircle size={18} />
+                <div>
+                  <strong>จำนวนต้องตรวจสอบเพิ่มเติม</strong>
+                  <p>{selectedManifest.count_discrepancy_note || 'จำนวนในบัญชีรายชื่อไม่ตรงกับคำร้องเดิม'}</p>
+                </div>
+              </div>
+            )}
+
+            <div className={styles.manifestPeople}>
+              {[...selectedManifest.rescue_delivery_people]
+                .sort((a, b) => a.sequence_no - b.sequence_no)
+                .map(person => (
+                  <article
+                    key={person.id}
+                    className={
+                      person.destination_type === 'hospital'
+                        ? styles.personHospital
+                        : person.destination_type === 'deceased'
+                          ? styles.personDeceased
+                          : styles.personArrived
+                    }
+                  >
+                    <span>
+                      {person.destination_type === 'hospital'
+                        ? <Hospital size={18} />
+                        : person.destination_type === 'deceased'
+                          ? <Skull size={18} />
+                          : <CheckCircle2 size={18} />}
+                    </span>
+                    <div>
+                      <strong>{person.sequence_no}. {person.full_name}</strong>
+                      <small>
+                        {getAgeGroupLabel(person.age_group)} · {getDestinationLabel(person.destination_type)}
+                        {person.destination_name ? ` · ${person.destination_name}` : ''}
+                      </small>
+                      {person.notes && <p>{person.notes}</p>}
+                    </div>
+                  </article>
+                ))}
+            </div>
+
+            <button className={styles.manifestDone} onClick={() => setSelectedManifest(null)}>ตรวจสอบแล้ว</button>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
@@ -626,7 +799,17 @@ function SourceRow({ icon, label, value, total, tone }: { icon: React.ReactNode;
   return <div className={styles.sourceRow}><div><span className={styles[`source_${tone}`]}>{icon}</span><strong>{label}</strong><b>{value.toLocaleString('th-TH')}</b></div><div className={styles.sourceTrack}><i className={styles[`fill_${tone}`]} style={{ width: `${rate}%` }} /></div><small>{rate}% ของผู้พักพิงปัจจุบัน</small></div>;
 }
 
-function OccupantRow({ occupant, onExit }: { occupant: Occupant; onExit: () => void }) {
+function OccupantRow({
+  occupant,
+  manifest,
+  onViewManifest,
+  onExit,
+}: {
+  occupant: Occupant;
+  manifest?: DeliveryManifest;
+  onViewManifest: (manifest: DeliveryManifest) => void;
+  onExit: () => void;
+}) {
   const memberTotal = getMemberTotal(occupant);
   return (
     <article className={styles.activityRow}>
@@ -635,7 +818,12 @@ function OccupantRow({ occupant, onExit }: { occupant: Occupant; onExit: () => v
       <DateTimeCell value={occupant.entry_date} />
       {occupant.exit_date ? <DateTimeCell value={occupant.exit_date} note={occupant.exit_destination ? EXIT_LABEL[occupant.exit_destination] : undefined} /> : <div className={`${styles.dateCell} ${styles.mutedCell}`}><strong>—</strong><small>ยังอยู่ในศูนย์</small></div>}
       <div className={styles.memberCell}><strong>{memberTotal} คน</strong><small>ผู้ใหญ่ {occupant.adult_count} · เด็ก {occupant.child_count} · สูงอายุ {occupant.elder_count}</small></div>
-      <div className={styles.rowAction}>{occupant.status === 'in_shelter' ? <button onClick={onExit}>ยืนยันคนออก</button> : <span>{occupant.exit_destination ? EXIT_LABEL[occupant.exit_destination] : 'ออกจากศูนย์แล้ว'}</span>}</div>
+      <div className={styles.rowAction}>
+        {manifest && <button className={styles.manifestButton} onClick={() => onViewManifest(manifest)}><ClipboardList size={13} /> ดูรายชื่อ</button>}
+        {occupant.status === 'in_shelter'
+          ? <button onClick={onExit}>ยืนยันคนออก</button>
+          : <span>{occupant.exit_destination ? EXIT_LABEL[occupant.exit_destination] : 'ออกจากศูนย์แล้ว'}</span>}
+      </div>
     </article>
   );
 }
@@ -701,6 +889,33 @@ function buildChartData(occupants: Occupant[], range: ChartRange): ChartBucket[]
 
 function getMemberTotal(occupant: Pick<Occupant, 'adult_count' | 'child_count' | 'elder_count'>) {
   return Math.max(0, Number(occupant.adult_count) || 0) + Math.max(0, Number(occupant.child_count) || 0) + Math.max(0, Number(occupant.elder_count) || 0);
+}
+
+function getManifestRequestedTotal(manifest: DeliveryManifest) {
+  return Math.max(0, manifest.requested_adult_count)
+    + Math.max(0, manifest.requested_child_count)
+    + Math.max(0, manifest.requested_elder_count);
+}
+
+function getAgeGroupLabel(ageGroup: DeliveryPerson['age_group']) {
+  if (ageGroup === 'child') return 'เด็ก';
+  if (ageGroup === 'elder') return 'ผู้สูงอายุ';
+  return 'ผู้ใหญ่';
+}
+
+function getDestinationLabel(destination: DeliveryPerson['destination_type']) {
+  if (destination === 'hospital') return 'ส่งโรงพยาบาล (เคสแดง)';
+  if (destination === 'deceased') return 'เสียชีวิต';
+  if (destination === 'relative_home') return 'ถึงบ้านญาติ';
+  if (destination === 'hotel') return 'ถึงโรงแรม';
+  if (destination === 'other_safe') return 'ถึงพื้นที่ปลอดภัยอื่น';
+  return 'มาถึงศูนย์พักพิง';
+}
+
+function isMissingManifestSchema(error: { code?: string; message?: string }) {
+  return error.code === '42P01'
+    || error.code === 'PGRST205'
+    || Boolean(error.message?.includes('rescue_delivery_manifests'));
 }
 
 function getPercentageLabel(value: number, total: number) {
