@@ -113,6 +113,11 @@
 .status-empty h2 { font-size:19px; }
 .status-empty p { font-size:14px; line-height:1.6; }
 .status-empty button { min-height:44px; font-size:14px; }
+.status-compensation-callout { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:14px; margin-top:14px; padding:18px; border:1px solid #b9cee3; border-radius:20px; background:linear-gradient(135deg,#eaf3fc,#fff); box-shadow:0 10px 28px rgba(0,40,85,.07); }
+.status-compensation-callout > span { width:46px; height:46px; display:grid; place-items:center; border-radius:14px; color:#fff; background:#0353a4; }
+.status-compensation-callout strong { display:block; color:#001845; font-size:16px; }
+.status-compensation-callout p { margin:3px 0 0; color:#5c677d; font-size:13px; line-height:1.55; }
+.status-compensation-callout button { min-height:46px; padding:0 18px; border:0; border-radius:13px; color:#fff; background:#0466c8; font:inherit; font-size:14px; font-weight:700; cursor:pointer; box-shadow:0 8px 18px rgba(4,102,200,.18); }
 
 @media(max-width:720px) {
   .victim-dashboard-header { grid-template-columns:1fr auto; padding:0 14px; }.victim-dashboard-brand { display:none; }.victim-dashboard-live { grid-column:2; }.victim-dashboard-main { padding:23px 13px 0; }.status-content-grid { grid-template-columns:1fr; }.status-overview { grid-template-columns:1fr 180px; padding:22px; }.status-welcome { grid-template-columns:180px 1fr; padding:22px; }
@@ -120,6 +125,7 @@
 @media(max-width:520px) {
   .victim-home-button span,.victim-dashboard-live { display:none; }.victim-dashboard-header { min-height:64px; }.victim-dashboard-intro h1 { font-size:34px; }.victim-workspace-tabs { margin-top:18px; }.victim-workspace-tabs button > span { display:none; }.sos-panel { padding:18px; border-radius:20px; }.sos-field-grid.two { grid-template-columns:1fr; }.sos-choice-grid.five { grid-template-columns:repeat(5,1fr); gap:4px; }.sos-choice-grid.three { grid-template-columns:1fr; }.sos-button-row { grid-template-columns:1fr; }.sos-button-row .sos-secondary-button { order:2; }.sos-location-box { grid-template-columns:35px 1fr; }.sos-location-box > button { grid-column:1/-1; }.status-overview { grid-template-columns:1fr; padding:22px; text-align:center; }.status-live-label { justify-content:center; }.status-overview p { margin-left:auto; margin-right:auto; }.status-overview .waiting-rescuer { height:125px; }.status-welcome { grid-template-columns:1fr; padding:20px; text-align:center; }.status-welcome .waiting-rescuer { height:125px; }.status-welcome p { margin:auto; }.status-search-control button span { display:none; }.status-search-control button { width:44px; padding:0; }.status-section-heading { display:block; }.status-section-heading > small { display:block; margin-top:4px; }.sos-stepper { margin-left:5px; margin-right:5px; }
 }
+@media(max-width:640px) { .status-compensation-callout { grid-template-columns:auto 1fr; padding:15px; }.status-compensation-callout button { grid-column:1/-1; width:100%; } }
 @media(prefers-reduced-motion:reduce) {
   .victim-workspace,.victim-dashboard-intro,.status-result,.rescuer-character,.rescuer-arm,.victim-dashboard-live i,.status-live-label i,.status-skeleton > *::after { animation:none; }
   .victim-home-button,.victim-workspace-tabs button,.sos-primary-button { transition:none; }

@@ -1,8 +1,10 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   AlertCircle,
+  Banknote,
   Check,
   CheckCircle2,
   Clock3,
@@ -18,7 +20,7 @@ import {
   Waves,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { getSavedPhone } from '@/lib/session';
+import { getSavedPhone, saveSosSession } from '@/lib/session';
 
 type SosReport = {
   id: string;
@@ -65,6 +67,19 @@ function getTimelineIndex(status: SosReport['status']) {
   return 1;
 }
 
+function hasReachedEligibleDestination(destination: VictimDestinationStatus | null) {
+  if (!destination) return false;
+  if (destination.status === 'returned_home') return true;
+  if (destination.status !== 'rescued') return false;
+  if (!destination.notes) return true;
+
+  const allCounts = [...destination.notes.matchAll(/(\d+)\s*คน/g)]
+    .reduce((total, match) => total + Number(match[1]), 0);
+  const unavailableCounts = [...destination.notes.matchAll(/(?:โรงพยาบาล|เสียชีวิต)\s*(\d+)\s*คน/g)]
+    .reduce((total, match) => total + Number(match[1]), 0);
+  return allCounts === 0 || allCounts > unavailableCounts;
+}
+
 export default function StatusTracker({
   initialPhone,
   onCreateRequest,
@@ -72,6 +87,7 @@ export default function StatusTracker({
   initialPhone: string;
   onCreateRequest: () => void;
 }) {
+  const router = useRouter();
   const [searchPhone, setSearchPhone] = useState(() => initialPhone || getSavedPhone() || '');
   const [report, setReport] = useState<SosReport | null>(null);
   const [destinationStatus, setDestinationStatus] = useState<VictimDestinationStatus | null>(null);
@@ -174,6 +190,17 @@ export default function StatusTracker({
     if (!report) return '';
     return new Date(destinationStatus?.updated_at || report.updated_at || report.created_at).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
   }, [destinationStatus?.updated_at, report]);
+  const canRequestCompensation = Boolean(
+    report
+    && (report.status === 'rescued' || report.status === 'closed')
+    && hasReachedEligibleDestination(destinationStatus)
+  );
+
+  const openCompensation = () => {
+    if (!report) return;
+    saveSosSession(report.id, report.phone);
+    router.push('/victim/compensation');
+  };
 
   return (
     <div className="status-tracker">
@@ -241,6 +268,13 @@ export default function StatusTracker({
               <button className="status-refresh" onClick={() => fetchReport(searchPhone)} disabled={loading}><RefreshCw size={14} /> อัปเดตสถานะอีกครั้ง</button>
             </aside>
           </div>
+          {canRequestCompensation && (
+            <section className="status-compensation-callout">
+              <span><Banknote size={22} /></span>
+              <div><strong>สำรวจความเสียหายและยื่นขอเยียวยา</strong><p>ยื่นได้ทั้งด้านที่อยู่อาศัยและด้านการประกอบอาชีพ พร้อมกลับมาแก้ไขหรือติดตามคำร้องได้</p></div>
+              <button type="button" onClick={openCompensation}>เริ่มยื่นเยียวยา</button>
+            </section>
+          )}
         </div>
       )}
 

@@ -481,8 +481,14 @@ export default function ShelterStaffDashboard() {
       }
 
       const name = exitDraft.fullName;
+      const returnedHome = exitDraft.destination === 'home';
       setExitDraft(null);
-      setNotice({ type: 'success', message: `ยืนยันการออกของ ${name} แล้ว` });
+      setNotice({
+        type: 'success',
+        message: returnedHome
+          ? `ยืนยันการออกของ ${name} แล้ว และสร้างรายการติดตามหลังกลับบ้านอัตโนมัติ`
+          : `ยืนยันการออกของ ${name} แล้ว`,
+      });
       await loadDashboard();
     } catch (error) {
       setNotice({ type: 'error', message: getErrorMessage(error, 'บันทึกการออกไม่สำเร็จ') });
