@@ -48,6 +48,17 @@ interface DamageReport {
   updated_at?: string | null;
 }
 
+interface SosLookupResult {
+  id: string;
+  full_name: string;
+  phone: string;
+  province: string;
+  district: string;
+  sub_district: string | null;
+  address_details: string | null;
+  status: 'pending' | 'assigned' | 'rescued' | 'cannot_reach' | 'closed';
+}
+
 interface Draft {
   category: ClaimCategory;
   fullName: string;
@@ -109,6 +120,8 @@ export default function CompensationPage() {
   const [selected, setSelected] = useState<DamageReport | null>(null);
   const [lookupName, setLookupName] = useState('');
   const [lookupPhone, setLookupPhone] = useState('');
+  const [lookupTerm, setLookupTerm] = useState('');
+  const [lookupResults, setLookupResults] = useState<SosLookupResult[]>([]);
   const [eligible, setEligible] = useState(false);
   const [contextLoaded, setContextLoaded] = useState(false);
   const [hasCachedDraft, setHasCachedDraft] = useState(false);
@@ -128,6 +141,7 @@ export default function CompensationPage() {
       const cached = readCachedDraft();
       if (!active) return;
       setLookupPhone(savedPhone);
+      setLookupTerm(savedPhone);
       setHasCachedDraft(Boolean(cached));
 
       let base: Partial<Draft> = { phone: savedPhone };
@@ -220,24 +234,43 @@ export default function CompensationPage() {
     setScreen('wizard');
   };
 
+  const selectLookupResult = async (sos: SosLookupResult) => {
+    setLoading(true); setError('');
+    const { data: destination } = await supabase.from('victim_status').select('status, notes').eq('sos_report_id', sos.id).maybeSingle();
+    const canApply = (sos.status === 'rescued' || sos.status === 'closed') && hasReachedEligibleDestination(destination);
+    saveSosSession(sos.id, sos.phone);
+    setLookupName(sos.full_name); setLookupPhone(sos.phone); setLookupTerm(sos.phone); setLookupResults([]);
+    setDraft(current => ({ ...current, fullName: sos.full_name, phone: sos.phone, province: sos.province, district: sos.district, subDistrict: sos.sub_district ?? '', addressDetails: sos.address_details ?? '' }));
+    await loadClaims(sos.phone);
+    setEligible(canApply); setLoading(false); setScreen('home');
+  };
+
   const lookup = async (event: React.FormEvent) => {
     event.preventDefault(); setError('');
-    const phone = normalizePhone(lookupPhone); const name = lookupName.trim();
-    if (!name || !/^0\d{8,9}$/.test(phone)) { setError('กรุณากรอกชื่อและเบอร์โทรให้ถูกต้อง'); return; }
+    setLookupResults([]);
+    const term = lookupTerm.trim();
+    const phone = normalizePhone(term);
+    const isPhone = /^\d[\d\s-]*$/.test(term);
+    if ((isPhone && !/^0\d{8,9}$/.test(phone)) || (!isPhone && term.length < 2)) {
+      setError('กรุณากรอกชื่ออย่างน้อย 2 ตัวอักษร หรือเบอร์โทรศัพท์ให้ถูกต้อง'); return;
+    }
     setLoading(true);
-    const { data: sos } = await supabase.from('sos_reports').select('id, full_name, phone, province, district, sub_district, address_details, status').eq('phone', phone).ilike('full_name', name).order('created_at', { ascending: false }).limit(1).maybeSingle();
-    let canApply = false;
-    if (!sos) {
+    let query = supabase.from('sos_reports').select('id, full_name, phone, province, district, sub_district, address_details, status').order('created_at', { ascending: false }).limit(10);
+    query = isPhone
+      ? query.eq('phone', phone)
+      : query.ilike('full_name', `%${term.replace(/[%_]/g, '')}%`);
+    const { data, error: lookupError } = await query;
+    if (lookupError) {
+      setLoading(false); setError('ค้นหาคำร้องไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'); return;
+    }
+    const matches = (data as SosLookupResult[] | null) ?? [];
+    if (!matches.length) {
       setClaims([]); setEligible(false); setLoading(false);
-      setError('ไม่พบข้อมูลที่ตรงกับชื่อและเบอร์โทร กรุณาตรวจสอบอีกครั้ง');
+      setError('ไม่พบคำขอจากชื่อหรือเบอร์โทรนี้ กรุณาตรวจสอบอีกครั้ง');
       return;
     }
-    const { data: destination } = await supabase.from('victim_status').select('status, notes').eq('sos_report_id', sos.id).maybeSingle();
-    canApply = (sos.status === 'rescued' || sos.status === 'closed') && hasReachedEligibleDestination(destination);
-    saveSosSession(sos.id, sos.phone);
-    setDraft(current => ({ ...current, fullName: sos.full_name, phone: sos.phone, province: sos.province, district: sos.district, subDistrict: sos.sub_district ?? '', addressDetails: sos.address_details ?? '' }));
-    await loadClaims(phone);
-    setEligible(canApply); setLoading(false); setScreen('home');
+    if (matches.length === 1) { await selectLookupResult(matches[0]); return; }
+    setLookupResults(matches); setLoading(false);
   };
 
   const goNext = () => {
@@ -317,7 +350,7 @@ export default function CompensationPage() {
           })}</div>
         </section>}
 
-        {!loading && screen === 'lookup' && <section className={styles.panel}><PageHeading icon={<Search />} title="ค้นหาและติดตามคำร้อง" description="ใช้ชื่อและเบอร์เดียวกับที่แจ้งขอความช่วยเหลือ" /><form className={styles.form} onSubmit={lookup}><Field label="ชื่อ–นามสกุล"><input value={lookupName} onChange={e => setLookupName(e.target.value)} /></Field><Field label="เบอร์โทรศัพท์"><input type="tel" inputMode="numeric" maxLength={10} value={lookupPhone} onChange={e => setLookupPhone(e.target.value.replace(/\D/g, '').slice(0,10))} /></Field><button className={styles.primary} type="submit"><Search size={17} /> ค้นหาคำร้อง</button></form></section>}
+        {!loading && screen === 'lookup' && <section className={styles.panel}><PageHeading icon={<Search />} title="ค้นหาและติดตามคำร้อง" description="ค้นหาได้ด้วยชื่อ–นามสกุล หรือเบอร์โทรศัพท์อย่างใดอย่างหนึ่ง" /><form className={styles.form} onSubmit={lookup}><Field label="ชื่อ–นามสกุล หรือเบอร์โทรศัพท์"><input type="search" autoComplete="off" placeholder="เช่น สมชาย ใจดี หรือ 0812345678" value={lookupTerm} onChange={e => { setLookupTerm(e.target.value); setLookupResults([]); setError(''); }} /></Field><button className={styles.primary} type="submit"><Search size={17} /> ค้นหาคำร้อง</button></form>{lookupResults.length > 0 && <div className={styles.lookupResults}><div><strong>พบ {lookupResults.length} รายการ</strong><small>เลือกคำขอที่เป็นของคุณ</small></div>{lookupResults.map(result => <button type="button" key={result.id} onClick={() => void selectLookupResult(result)}><span><strong>{result.full_name}</strong><small>{maskPhone(result.phone)} · {result.sub_district ? `ต.${result.sub_district} ` : ''}อ.{result.district} จ.{result.province}</small></span><ChevronRight size={18} /></button>)}</div>}</section>}
 
         {!loading && screen === 'wizard' && <section className={styles.panel}>
           <WizardProgress step={step} />
@@ -416,6 +449,7 @@ function tenureLabel(value:Draft['housingTenure']){return value==='owner'?'บ�
 function homeStatusLabel(value:string|null|undefined){return value==='returned'?'พักอาศัยได้':value==='temporary_shelter'?'ยังอยู่ที่พักชั่วคราว':value==='cannot_return'?'บ้านยังพักไม่ได้':'–';}
 function agricultureTypeLabels(values:string[]|null|undefined){const labels:Record<string,string>={crop:'พืชผล/พื้นที่เกษตร',fishery:'ประมง',livestock:'ปศุสัตว์'};return values?.map(value=>labels[value]??value).join(', ')||'–';}
 function maskIdCard(value:string|null|undefined){if(!value||value.length<13)return'–';return`${value.slice(0,1)}-${value.slice(1,5)}-XXXXX-${value.slice(-2)}`;}
+function maskPhone(value:string){if(value.length<7)return value;return`${value.slice(0,3)}-XXX-${value.slice(-4)}`;}
 function getMessage(cause:unknown,fallback:string){return cause instanceof Error?cause.message:fallback;}
 function formatSubmitError(cause:unknown){const e=cause as {code?:string;message?:string};if(e.code==='23505'&&e.message?.includes('property_address'))return'ที่อยู่นี้มีผู้ยื่นคำร้องด้านที่อยู่อาศัยแล้ว บ้านหนึ่งหลังยื่นได้หนึ่งคน';if(e.code==='23505')return'เลขบัตรประชาชนนี้มีคำร้องประเภทเดียวกันแล้ว กรุณากลับไปตรวจสอบคำร้องเดิม';return getMessage(cause,'ส่งคำร้องไม่สำเร็จ กรุณาลองใหม่');}
 function hasReachedEligibleDestination(destination:{status?:string|null;notes?:string|null}|null){if(!destination)return false;if(destination.status==='returned_home')return true;if(destination.status!=='rescued')return false;if(!destination.notes)return true;const all=[...destination.notes.matchAll(/(\d+)\s*คน/g)].reduce((sum,item)=>sum+Number(item[1]),0);const unavailable=[...destination.notes.matchAll(/(?:โรงพยาบาล|เสียชีวิต)\s*(\d+)\s*คน/g)].reduce((sum,item)=>sum+Number(item[1]),0);return all===0||all>unavailable;}

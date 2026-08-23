@@ -138,6 +138,17 @@
 .categoryCard > button:disabled { color: var(--pale); background: #e5eaf0; cursor: not-allowed; }
 
 .form, .stepPage { display: grid; gap: 19px; }
+.lookupResults { display: grid; gap: 9px; margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--line); }
+.lookupResults > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.lookupResults > div strong { font-size: 15px; }
+.lookupResults > div small { color: var(--muted); font-size: 12px; }
+.lookupResults > button { width: 100%; min-height: 66px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 14px; border: 1px solid #cfdae5; border-radius: 14px; color: var(--ink); background: #fbfdff; text-align: left; cursor: pointer; transition: border-color .16s ease, background .16s ease, transform .16s ease; }
+.lookupResults > button:hover { border-color: #83b2dd; background: #eff7fe; transform: translateY(-1px); }
+.lookupResults > button span { min-width: 0; }
+.lookupResults > button strong, .lookupResults > button small { display: block; }
+.lookupResults > button strong { font-size: 15px; }
+.lookupResults > button small { margin-top: 3px; overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.lookupResults > button > svg { flex: 0 0 auto; color: var(--primary); }
 .pageHeading { display: flex; align-items: flex-start; gap: 13px; margin-bottom: 3px; }
 .pageHeading > span { width: 48px; height: 48px; flex: 0 0 48px; display: grid; place-items: center; border-radius: 15px; color: var(--primary); background: #eaf4fd; }
 .pageHeading h2 { margin: 0; font-size: 23px; line-height: 1.3; }
