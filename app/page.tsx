@@ -267,8 +267,9 @@ const HOME_STYLES = `
     position:relative;
     isolation:isolate;
     min-height:100vh;
+    min-height:100dvh;
     overflow:hidden;
-    padding:0 24px 40px;
+    padding:0 24px max(40px, env(safe-area-inset-bottom));
     color:var(--ink);
     background:linear-gradient(145deg,#F9FBFE 0%,#F3F7FC 52%,#EAF1F9 100%);
     font-family:var(--font-thai),'IBM Plex Sans Thai',sans-serif;
@@ -427,7 +428,7 @@ const HOME_STYLES = `
     .home-response-scroll { height:330px; }
   }
   @media(max-width:560px) {
-    .home-shell { padding:0 15px 32px; }
+    .home-shell { padding:0 15px max(32px, calc(16px + env(safe-area-inset-bottom))); }
     .home-header { min-height:78px; }
     .home-brand-mark { width:40px; height:40px; flex:0 0 40px; border-radius:13px; }
     .home-brand-name { max-width:245px; font-size:15px; line-height:1.35; }
