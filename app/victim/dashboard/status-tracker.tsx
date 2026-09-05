@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { type CSSProperties, FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   AlertCircle,
@@ -11,11 +11,9 @@ import {
   MapPin,
   PackageOpen,
   Phone,
-  Radio,
   RefreshCw,
   Search,
   ShieldCheck,
-  Truck,
   UserRound,
   Waves,
 } from 'lucide-react';
@@ -55,10 +53,10 @@ const STATUS_COPY: Record<SosReport['status'], { title: string; description: str
 };
 
 const TIMELINE_STEPS = [
-  { title: 'ส่งข้อมูล SOS สำเร็จ', description: 'ข้อมูลติดต่อและตำแหน่งถูกส่งถึงศูนย์แล้ว', icon: Check },
-  { title: 'ศูนย์กำลังประสานทีม', description: 'ตรวจสอบความเร่งด่วนและจัดเจ้าหน้าที่ในพื้นที่', icon: Radio },
-  { title: 'ทีมกู้ภัยกำลังเดินทาง', description: 'เจ้าหน้าที่รับภารกิจและเดินทางไปยังพิกัด', icon: Truck },
-  { title: 'ภารกิจเสร็จสิ้น', description: 'ผู้แจ้งเหตุได้รับการช่วยเหลือและอยู่ในจุดปลอดภัย', icon: ShieldCheck },
+  { title: 'ส่งข้อมูล SOS สำเร็จ', description: 'ข้อมูลติดต่อและตำแหน่งถูกส่งถึงศูนย์แล้ว' },
+  { title: 'ศูนย์กำลังประสานทีม', description: 'ตรวจสอบความเร่งด่วนและจัดเจ้าหน้าที่ในพื้นที่' },
+  { title: 'ทีมกู้ภัยกำลังเดินทาง', description: 'เจ้าหน้าที่รับภารกิจและเดินทางไปยังพิกัด' },
+  { title: 'ภารกิจเสร็จสิ้น', description: 'ผู้แจ้งเหตุได้รับการช่วยเหลือและอยู่ในจุดปลอดภัย' },
 ] as const;
 
 function getTimelineIndex(status: SosReport['status']) {
@@ -88,12 +86,22 @@ export default function StatusTracker({
   onCreateRequest: () => void;
 }) {
   const router = useRouter();
-  const [searchPhone, setSearchPhone] = useState(() => initialPhone || getSavedPhone() || '');
+  // Read localStorage only after hydration so the first client render matches SSR.
+  const [searchPhone, setSearchPhone] = useState(initialPhone);
   const [report, setReport] = useState<SosReport | null>(null);
   const [destinationStatus, setDestinationStatus] = useState<VictimDestinationStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (initialPhone) return;
+    const task = window.setTimeout(() => {
+      const savedPhone = getSavedPhone();
+      if (savedPhone) setSearchPhone(savedPhone);
+    }, 0);
+    return () => window.clearTimeout(task);
+  }, [initialPhone]);
 
   const fetchReport = useCallback(async (phone: string) => {
     if (phone.length !== 10) return;
@@ -161,6 +169,10 @@ export default function StatusTracker({
   };
 
   const timelineIndex = report ? getTimelineIndex(report.status) : 0;
+  const activeTimelineStep = timelineIndex < TIMELINE_STEPS.length ? timelineIndex + 1 : null;
+  const timelineProgress = activeTimelineStep
+    ? ((activeTimelineStep - 1) / (TIMELINE_STEPS.length - 1)) * 100
+    : 100;
   const statusCopy = useMemo(() => {
     if (!report) return null;
     const base = STATUS_COPY[report.status];
@@ -235,16 +247,18 @@ export default function StatusTracker({
 
           <div className="status-content-grid">
             <section className="status-timeline-panel">
-              <div className="status-section-heading"><div><span>PROGRESS</span><h3>ขั้นตอนการช่วยเหลือ</h3></div><small>อัปเดต {updatedTime}</small></div>
-              <div className={`status-timeline ${report.status === 'cannot_reach' ? 'has-issue' : ''}`}>
+              <div className="status-section-heading"><div><span>PROGRESS</span><h3>ขั้นตอนการช่วยเหลือ</h3>{activeTimelineStep ? <p className="status-current-step">ตอนนี้อยู่ขั้นตอนที่ {activeTimelineStep} จาก {TIMELINE_STEPS.length}</p> : <p className="status-current-step complete">ดำเนินการครบทั้ง {TIMELINE_STEPS.length} ขั้นตอนแล้ว</p>}</div><small>อัปเดต {updatedTime}</small></div>
+              <div
+                className={`status-timeline ${report.status === 'cannot_reach' ? 'has-issue' : ''} ${activeTimelineStep ? 'in-progress' : 'complete-progress'}`}
+                style={{ '--timeline-progress': `${timelineProgress}%` } as CSSProperties}
+              >
                 {TIMELINE_STEPS.map((item, index) => {
                   const isComplete = index < timelineIndex;
                   const isCurrent = index === timelineIndex && timelineIndex < TIMELINE_STEPS.length;
                   const isIssue = report.status === 'cannot_reach' && index === 1;
-                  const Icon = isComplete ? Check : item.icon;
                   return (
                     <div className={`status-timeline-item ${isComplete ? 'complete' : ''} ${isCurrent ? 'current' : ''} ${isIssue ? 'issue' : ''}`} key={item.title}>
-                      <span className="status-timeline-icon"><Icon size={15} strokeWidth={2.3} /></span>
+                      <span className="status-timeline-icon" aria-label={isComplete ? `ขั้นตอนที่ ${index + 1}: เสร็จแล้ว` : isCurrent ? `ขั้นตอนที่ ${index + 1}: กำลังดำเนินการ` : `ขั้นตอนที่ ${index + 1}: รอดำเนินการ`}>{isComplete ? <Check size={15} strokeWidth={2.8} /> : index + 1}</span>
                       <div><strong>{isIssue ? 'กำลังประสานเส้นทางใหม่' : item.title}</strong><p>{isIssue ? 'พื้นที่อาจเข้าถึงยาก เจ้าหน้าที่กำลังหาเส้นทางหรือขอข้อมูลเพิ่ม' : item.description}</p>{isCurrent && <small><Clock3 size={12} /> กำลังดำเนินการ</small>}</div>
                     </div>
                   );

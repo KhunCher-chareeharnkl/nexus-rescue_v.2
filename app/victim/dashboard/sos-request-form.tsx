@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { saveSosSession } from '@/lib/session';
+import thaiAddressData from '@riz007/thai-address-data';
 
 const AVAILABLE_ITEMS = [
   'อาหารและน้ำดื่ม',
@@ -27,6 +28,21 @@ const AVAILABLE_ITEMS = [
   'เสื้อผ้าแห้ง',
   'แพชูชีพ/ชูชีพ',
 ];
+
+const MAX_PEOPLE_PER_GROUP = 99;
+
+function createSosRequestId() {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (character) => {
+    const random = Math.floor(Math.random() * 16);
+    const value = character === 'x' ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
+}
+
+function unique(values: string[]) {
+  return [...new Set(values)].sort((a, b) => a.localeCompare(b, 'th'));
+}
 
 const STEP_META = [
   { number: 1, label: 'ข้อมูลติดต่อ', icon: UserRound },
@@ -74,6 +90,7 @@ function calculateUrgency({
 export default function SosRequestForm({ onSubmitted }: { onSubmitted: (phone: string) => void }) {
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
+  const [sosRequestId] = useState(createSosRequestId);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
@@ -81,16 +98,16 @@ export default function SosRequestForm({ onSubmitted }: { onSubmitted: (phone: s
   const [province, setProvince] = useState('');
   const [district, setDistrict] = useState('');
   const [subDistrict, setSubDistrict] = useState('');
-  const [addressDetails, setAddressDetails] = useState('');
+  const [houseNumber, setHouseNumber] = useState('');
+  const [villageNumber, setVillageNumber] = useState('');
+  const [soi, setSoi] = useState('');
+  const [road, setRoad] = useState('');
+  const [landmark, setLandmark] = useState('');
   const [lat, setLat] = useState<number | null>(null);
   const [lng, setLng] = useState<number | null>(null);
   const [gpsLoading, setGpsLoading] = useState(false);
-  const [provinces, setProvinces] = useState<string[]>([]);
-  const [districts, setDistricts] = useState<string[]>([]);
-  const [subDistricts, setSubDistricts] = useState<string[]>([]);
-  const [loadingProvinces, setLoadingProvinces] = useState(false);
-  const [loadingDistricts, setLoadingDistricts] = useState(false);
-  const [loadingSubDistricts, setLoadingSubDistricts] = useState(false);
+  const [gpsNotice, setGpsNotice] = useState('');
+  const [triedLocationStep, setTriedLocationStep] = useState(false);
   const [waterLevel, setWaterLevel] = useState(1);
   const [adultCount, setAdultCount] = useState(1);
   const [childCount, setChildCount] = useState(0);
@@ -98,21 +115,13 @@ export default function SosRequestForm({ onSubmitted }: { onSubmitted: (phone: s
   const [specialNeeds, setSpecialNeeds] = useState('');
   const [neededItems, setNeededItems] = useState<string[]>([]);
   const [customItem, setCustomItem] = useState('');
-
-  useEffect(() => {
-    let active = true;
-
-    async function loadProvinces() {
-      setLoadingProvinces(true);
-      const { data, error } = await supabase.from('thai_addresses').select('province').order('province');
-      if (!active) return;
-      if (!error) setProvinces(Array.from(new Set((data ?? []).map((item) => item.province))));
-      setLoadingProvinces(false);
-    }
-
-    loadProvinces();
-    return () => { active = false; };
-  }, []);
+  const hasGpsCoordinates = lat !== null && lng !== null;
+  const hasAddressDetails = [houseNumber, villageNumber, soi, road, landmark].some((value) => value.trim().length > 0);
+  const hasLocationDetails = hasGpsCoordinates || hasAddressDetails;
+  const provinces = useMemo(() => unique(thaiAddressData.map((item) => item.province)), []);
+  const districts = useMemo(() => unique(thaiAddressData.filter((item) => item.province === province).map((item) => item.district)), [province]);
+  const subDistrictRows = useMemo(() => thaiAddressData.filter((item) => item.province === province && item.district === district), [province, district]);
+  const subDistricts = useMemo(() => unique(subDistrictRows.map((item) => item.subdistrict)), [subDistrictRows]);
 
   const handlePhoneChange = (value: string) => {
     const digits = value.replace(/\D/g, '').slice(0, 10);
@@ -120,44 +129,32 @@ export default function SosRequestForm({ onSubmitted }: { onSubmitted: (phone: s
     if (digits.length === 10) setPhoneError('');
   };
 
-  const handleProvinceChange = async (value: string) => {
+  const handleProvinceChange = (value: string) => {
     setProvince(value);
     setDistrict('');
     setSubDistrict('');
-    setDistricts([]);
-    setSubDistricts([]);
-    if (!value) return;
-
-    setLoadingDistricts(true);
-    const { data, error } = await supabase
-      .from('thai_addresses')
-      .select('district')
-      .eq('province', value)
-      .order('district');
-    if (!error) setDistricts(Array.from(new Set((data ?? []).map((item) => item.district))));
-    setLoadingDistricts(false);
   };
 
-  const handleDistrictChange = async (value: string) => {
+  const handleDistrictChange = (value: string) => {
     setDistrict(value);
     setSubDistrict('');
-    setSubDistricts([]);
-    if (!province || !value) return;
-
-    setLoadingSubDistricts(true);
-    const { data, error } = await supabase
-      .from('thai_addresses')
-      .select('sub_district')
-      .eq('province', province)
-      .eq('district', value)
-      .order('sub_district');
-    if (!error) setSubDistricts(Array.from(new Set((data ?? []).map((item) => item.sub_district))));
-    setLoadingSubDistricts(false);
   };
 
   const getLocation = () => {
+    setGpsNotice('');
+    const isMessengerWebView = /(Messenger|FBAN|FBAV|FB_IAB)/i.test(navigator.userAgent);
+
+    if (!window.isSecureContext) {
+      setGpsNotice('ลิงก์นี้ต้องเปิดผ่าน HTTPS จึงจะขอใช้ตำแหน่งได้ กรุณาเปิดด้วยเบราว์เซอร์ของเครื่อง');
+      return;
+    }
+
     if (!navigator.geolocation) {
-      alert('เบราว์เซอร์นี้ไม่รองรับการดึงพิกัด GPS');
+      if (isMessengerWebView) {
+        setGpsNotice('Messenger ไม่รองรับการขอใช้ตำแหน่งบนเครื่องนี้ ให้กดเมนู ⋮ แล้วเลือก “เปิดในเบราว์เซอร์” จากนั้นกดปุ่มนี้อีกครั้ง');
+        return;
+      }
+      setGpsNotice('เบราว์เซอร์นี้ไม่รองรับการดึงพิกัด GPS กรุณากรอกจุดสังเกตให้ละเอียดแทน');
       return;
     }
 
@@ -166,14 +163,28 @@ export default function SosRequestForm({ onSubmitted }: { onSubmitted: (phone: s
       (position) => {
         setLat(position.coords.latitude);
         setLng(position.coords.longitude);
+        setTriedLocationStep(false);
         setGpsLoading(false);
       },
-      () => {
+      (error) => {
         setGpsLoading(false);
-        alert('ไม่สามารถอ่านพิกัดได้ กรุณาอนุญาตตำแหน่งหรือกรอกรายละเอียดสถานที่แทน');
+        if (isMessengerWebView && error.code === error.PERMISSION_DENIED) {
+          setGpsNotice('Messenger ไม่แสดงหน้าต่างขอใช้ตำแหน่งในบางเครื่อง ให้กดเมนู ⋮ แล้วเลือก “เปิดในเบราว์เซอร์” จากนั้นกดปุ่มนี้อีกครั้ง');
+          return;
+        }
+        setGpsNotice('ไม่สามารถอ่านพิกัดได้ กรุณาอนุญาตตำแหน่ง หรือกรอกรายละเอียดสถานที่และจุดสังเกตให้ครบถ้วน');
       },
       { enableHighAccuracy: true, timeout: 12000 },
     );
+  };
+
+  const copyCurrentLink = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setGpsNotice('คัดลอกลิงก์แล้ว — วางลิงก์ใน Chrome หรือ Safari เพื่ออนุญาตตำแหน่ง');
+    } catch {
+      setGpsNotice('กรุณาคัดลอกลิงก์จากแถบด้านบน แล้วเปิดด้วย Chrome หรือ Safari เพื่ออนุญาตตำแหน่ง');
+    }
   };
 
   const goToLocationStep = () => {
@@ -193,6 +204,10 @@ export default function SosRequestForm({ onSubmitted }: { onSubmitted: (phone: s
       alert('กรุณาเลือกจังหวัดและอำเภอ');
       return;
     }
+    if (!hasLocationDetails) {
+      setTriedLocationStep(true);
+      return;
+    }
     setStep(3);
   };
 
@@ -209,12 +224,30 @@ export default function SosRequestForm({ onSubmitted }: { onSubmitted: (phone: s
     setCustomItem('');
   };
 
+  const totalPeople = adultCount + childCount + elderCount;
+
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     if (submitting) return;
+    if (totalPeople < 1) {
+      alert('กรุณาระบุจำนวนผู้ประสบภัยอย่างน้อย 1 คน');
+      return;
+    }
+    if (!hasLocationDetails) {
+      setTriedLocationStep(true);
+      setStep(2);
+      return;
+    }
     setSubmitting(true);
 
     try {
+      const addressDetails = [
+        houseNumber.trim() && `บ้านเลขที่ ${houseNumber.trim()}`,
+        villageNumber.trim() && `หมู่ ${villageNumber.trim()}`,
+        soi.trim() && `ซอย ${soi.trim()}`,
+        road.trim() && `ถนน ${road.trim()}`,
+        landmark.trim() && `จุดสังเกต: ${landmark.trim()}`,
+      ].filter(Boolean).join(' · ');
       const urgencyLevel = calculateUrgency({
         waterLevel,
         adultCount,
@@ -224,29 +257,43 @@ export default function SosRequestForm({ onSubmitted }: { onSubmitted: (phone: s
         neededItems,
       });
 
+      const payload = {
+        client_request_id: sosRequestId,
+        full_name: `${firstName.trim()} ${lastName.trim()}`,
+        phone,
+        province,
+        district,
+        sub_district: subDistrict,
+        address_details: addressDetails || null,
+        lat,
+        lng,
+        adult_count: adultCount,
+        child_count: childCount,
+        elder_count: elderCount,
+        urgency_level: urgencyLevel,
+        water_level: waterLevel,
+        special_needs: specialNeeds.trim() || null,
+        needed_items: neededItems,
+        status: 'pending',
+      };
+
       const { data, error } = await supabase
         .from('sos_reports')
-        .insert([{
-          full_name: `${firstName.trim()} ${lastName.trim()}`,
-          phone,
-          province,
-          district,
-          sub_district: subDistrict,
-          address_details: addressDetails.trim() || null,
-          lat,
-          lng,
-          adult_count: adultCount,
-          child_count: childCount,
-          elder_count: elderCount,
-          urgency_level: urgencyLevel,
-          water_level: waterLevel,
-          special_needs: specialNeeds.trim() || null,
-          needed_items: neededItems,
-          status: 'pending',
-        }])
+        .insert([payload])
         .select('id')
         .single();
 
+      if (error?.code === '23505') {
+        const { data: existingRequest, error: existingRequestError } = await supabase
+          .from('sos_reports')
+          .select('id')
+          .eq('client_request_id', sosRequestId)
+          .maybeSingle();
+        if (existingRequestError || !existingRequest) throw error;
+        saveSosSession(existingRequest.id, phone);
+        onSubmitted(phone);
+        return;
+      }
       if (error) throw error;
       saveSosSession(data.id, phone);
       onSubmitted(phone);
@@ -288,17 +335,32 @@ export default function SosRequestForm({ onSubmitted }: { onSubmitted: (phone: s
       {step === 2 && (
         <section className="sos-panel">
           <PanelHeading number="02" title="ตำแหน่งที่ต้องการความช่วยเหลือ" description="เลือกพื้นที่และเพิ่มจุดสังเกตเพื่อให้เจ้าหน้าที่หาเจอง่ายขึ้น" />
-          <Field label="จังหวัด"><select value={province} onChange={(event) => handleProvinceChange(event.target.value)}><option value="">{loadingProvinces ? 'กำลังโหลด...' : 'เลือกจังหวัด'}</option>{provinces.map((item) => <option key={item}>{item}</option>)}</select></Field>
+          <Field label="จังหวัด"><select value={province} onChange={(event) => handleProvinceChange(event.target.value)}><option value="">เลือกจังหวัด</option>{provinces.map((item) => <option key={item}>{item}</option>)}</select></Field>
           <div className="sos-field-grid two">
-            <Field label="อำเภอ"><select value={district} disabled={!province || loadingDistricts} onChange={(event) => handleDistrictChange(event.target.value)}><option value="">{loadingDistricts ? 'กำลังโหลด...' : 'เลือกอำเภอ'}</option>{districts.map((item) => <option key={item}>{item}</option>)}</select></Field>
-            <Field label="ตำบล"><select value={subDistrict} disabled={!district || loadingSubDistricts} onChange={(event) => setSubDistrict(event.target.value)}><option value="">{loadingSubDistricts ? 'กำลังโหลด...' : 'เลือกตำบล'}</option>{subDistricts.map((item) => <option key={item}>{item}</option>)}</select></Field>
+            <Field label="อำเภอ"><select value={district} disabled={!province} onChange={(event) => handleDistrictChange(event.target.value)}><option value="">เลือกอำเภอ</option>{districts.map((item) => <option key={item}>{item}</option>)}</select></Field>
+            <Field label="ตำบล"><select value={subDistrict} disabled={!district} onChange={(event) => setSubDistrict(event.target.value)}><option value="">เลือกตำบล</option>{subDistricts.map((item) => <option key={item}>{item}</option>)}</select></Field>
           </div>
-          <Field label="บ้านเลขที่ ซอย หรือจุดสังเกต"><textarea rows={3} value={addressDetails} onChange={(event) => setAddressDetails(event.target.value)} placeholder="เช่น บ้านชั้นเดียวติดร้านขายยา หลังคาสีน้ำเงิน" /></Field>
-          <div className={`sos-location-box ${lat && lng ? 'success' : ''}`}>
+          <div className="sos-field-grid two">
+            <Field label="บ้านเลขที่"><input value={houseNumber} onChange={(event) => setHouseNumber(event.target.value)} placeholder="เช่น 123/45" autoComplete="address-line1" /></Field>
+            <Field label="หมู่ที่"><input value={villageNumber} onChange={(event) => setVillageNumber(event.target.value)} placeholder="เช่น 4" inputMode="numeric" /></Field>
+          </div>
+          <div className="sos-field-grid two">
+            <Field label="ซอย"><input value={soi} onChange={(event) => setSoi(event.target.value)} placeholder="เช่น ซอยสุขใจ 2" /></Field>
+            <Field label="ถนน"><input value={road} onChange={(event) => setRoad(event.target.value)} placeholder="เช่น ถนนเพชรเกษม" /></Field>
+          </div>
+          <Field label="จุดสังเกตหรือรายละเอียดเพิ่มเติม" hint="ถ้ามี จะช่วยให้ทีมกู้ภัยหาคุณได้เร็วขึ้น"><textarea rows={3} value={landmark} onChange={(event) => setLandmark(event.target.value)} placeholder="เช่น บ้านชั้นเดียวติดร้านขายยา หลังคาสีน้ำเงิน" /></Field>
+          {triedLocationStep && !hasLocationDetails && <div className="sos-location-required" role="alert">กรุณาเพิ่มพิกัด GPS หรือกรอกรายละเอียดที่อยู่/จุดสังเกตอย่างน้อย 1 รายการ</div>}
+          <div className={`sos-location-box ${hasGpsCoordinates ? 'success' : ''}`}>
             <span><Crosshair size={20} /></span>
-            <div><strong>{lat && lng ? 'บันทึกพิกัดแล้ว' : 'เพิ่มพิกัด GPS'}</strong><small>{lat && lng ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : 'ช่วยให้ทีมกู้ภัยนำทางมาถึงได้แม่นยำขึ้น'}</small></div>
-            <button type="button" onClick={getLocation} disabled={gpsLoading}>{gpsLoading ? 'กำลังอ่าน...' : lat && lng ? 'อัปเดต' : 'ใช้ตำแหน่งนี้'}</button>
+            <div><strong>{hasGpsCoordinates ? 'บันทึกพิกัดแล้ว' : 'เพิ่มพิกัด GPS'}</strong><small>{hasGpsCoordinates ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : 'ช่วยให้ทีมกู้ภัยนำทางมาถึงได้แม่นยำขึ้น'}</small></div>
+            <button type="button" onClick={getLocation} disabled={gpsLoading}>{gpsLoading ? 'กำลังอ่าน...' : hasGpsCoordinates ? 'อัปเดต' : 'ใช้ตำแหน่งนี้'}</button>
           </div>
+          {gpsNotice && (
+            <div className="sos-location-help" role="status">
+              <span>{gpsNotice}</span>
+              {/(Messenger|HTTPS|เบราว์เซอร์ของเครื่อง)/.test(gpsNotice) && <button type="button" onClick={copyCurrentLink}>คัดลอกลิงก์</button>}
+            </div>
+          )}
           <div className="sos-button-row"><button className="sos-secondary-button" type="button" onClick={() => setStep(1)}><ArrowLeft size={15} /> ย้อนกลับ</button><button className="sos-primary-button" type="button" onClick={goToSituationStep}>รายละเอียดเหตุการณ์ <ArrowRight size={15} /></button></div>
         </section>
       )}
@@ -307,13 +369,13 @@ export default function SosRequestForm({ onSubmitted }: { onSubmitted: (phone: s
         <section className="sos-panel">
           <PanelHeading number="03" title="รายละเอียดสถานการณ์" description="ข้อมูลนี้ช่วยให้เจ้าหน้าที่เตรียมกำลังคนและอุปกรณ์ได้เหมาะสม" />
           <Field label="ระดับน้ำโดยประมาณ"><div className="sos-choice-grid five">{[1, 2, 3, 4, 5].map((level) => <button type="button" className={waterLevel === level ? 'selected' : ''} key={level} onClick={() => setWaterLevel(level)}><strong>{level}</strong><small>เมตร</small></button>)}</div></Field>
-          <Field label="จำนวนผู้ประสบภัย"><div className="sos-people-list"><Counter label="ผู้ใหญ่" value={adultCount} setValue={setAdultCount} /><Counter label="เด็ก" value={childCount} setValue={setChildCount} /><Counter label="ผู้สูงอายุ" value={elderCount} setValue={setElderCount} /></div></Field>
+          <Field label="จำนวนผู้ประสบภัย"><div className="sos-people-list"><Counter label="เด็ก" ageRange="อายุ 0–17 ปี" value={childCount} setValue={setChildCount} /><Counter label="ผู้ใหญ่" ageRange="อายุ 18–59 ปี" value={adultCount} setValue={setAdultCount} /><Counter label="ผู้สูงอายุ" ageRange="อายุ 60 ปีขึ้นไป" value={elderCount} setValue={setElderCount} /></div>{totalPeople < 1 && <div className="sos-field-error" role="alert">กรุณาระบุจำนวนผู้ประสบภัยอย่างน้อย 1 คน</div>}</Field>
           <Field label="สิ่งของบรรเทาทุกข์ที่ต้องการ"><div className="sos-chip-list">{AVAILABLE_ITEMS.map((item) => <button type="button" className={neededItems.includes(item) ? 'selected' : ''} key={item} onClick={() => toggleItem(item)}>{neededItems.includes(item) && <Check size={13} />}{item}</button>)}</div></Field>
           <div className="sos-custom-item"><PackageOpen size={17} /><input value={customItem} onChange={(event) => setCustomItem(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addCustomItem(); } }} placeholder="เพิ่มสิ่งของอื่น ๆ" /><button type="button" onClick={addCustomItem}>เพิ่ม</button></div>
           {neededItems.some((item) => !AVAILABLE_ITEMS.includes(item)) && <div className="sos-custom-chips">{neededItems.filter((item) => !AVAILABLE_ITEMS.includes(item)).map((item) => <span key={item}>{item}<button type="button" onClick={() => toggleItem(item)} aria-label={`ลบ ${item}`}><X size={12} /></button></span>)}</div>}
           <Field label="ความต้องการพิเศษหรือหมายเหตุ"><textarea rows={3} value={specialNeeds} onChange={(event) => setSpecialNeeds(event.target.value)} placeholder="เช่น มีผู้ป่วยติดเตียง ผู้พิการ หญิงตั้งครรภ์ หรือยาที่จำเป็น" /></Field>
           <div className="sos-submit-note"><Send size={17} /><span><strong>ระบบจะประเมินความเร่งด่วนให้อัตโนมัติ</strong><small>ประเมินจากระดับน้ำ จำนวนผู้ประสบภัย กลุ่มเปราะบาง และความต้องการพิเศษ</small></span></div>
-          <div className="sos-button-row"><button className="sos-secondary-button" type="button" onClick={() => setStep(2)}><ArrowLeft size={15} /> ย้อนกลับ</button><button className="sos-primary-button" type="submit" disabled={submitting}>{submitting ? 'กำลังส่งข้อมูล...' : 'ส่งคำขอความช่วยเหลือ'} <Send size={15} /></button></div>
+          <div className="sos-button-row"><button className="sos-secondary-button" type="button" onClick={() => setStep(2)}><ArrowLeft size={15} /> ย้อนกลับ</button><button className="sos-primary-button" type="submit" disabled={submitting || totalPeople < 1}>{submitting ? 'กำลังส่งข้อมูล...' : 'ส่งคำขอความช่วยเหลือ'} <Send size={15} /></button></div>
         </section>
       )}
     </form>
@@ -328,6 +390,6 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   return <label className="sos-field"><span>{label}{hint && <small>{hint}</small>}</span>{children}</label>;
 }
 
-function Counter({ label, value, setValue }: { label: string; value: number; setValue: (value: number) => void }) {
-  return <div><span><Users size={14} /> {label}</span><div><button type="button" onClick={() => setValue(Math.max(0, value - 1))}><Minus size={14} /></button><strong>{value}</strong><button type="button" className="add" onClick={() => setValue(Math.min(20, value + 1))}><Plus size={14} /></button></div></div>;
+function Counter({ label, ageRange, value, setValue }: { label: string; ageRange: string; value: number; setValue: (value: number) => void }) {
+  return <div><span><Users size={14} /><span><b>{label}</b><small>{ageRange}</small></span></span><div><button type="button" aria-label={`ลดจำนวน${label}`} onClick={() => setValue(Math.max(0, value - 1))}><Minus size={14} /></button><strong>{value}</strong><button type="button" className="add" aria-label={`เพิ่มจำนวน${label}`} onClick={() => setValue(Math.min(MAX_PEOPLE_PER_GROUP, value + 1))}><Plus size={14} /></button></div></div>;
 }

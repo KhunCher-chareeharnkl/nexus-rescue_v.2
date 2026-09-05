@@ -33,12 +33,20 @@ interface SOSReport {
   phone: string;
   province: string;
   district: string;
+  sub_district?: string | null;
+  address_details?: string | null;
   status: string;
   urgency_level: string;
   adult_count: number;
   child_count: number;
   elder_count: number;
+  water_level?: number | null;
+  needed_items?: string[] | null;
+  special_needs?: string | null;
+  lat?: number | null;
+  lng?: number | null;
   created_at: string;
+  updated_at?: string | null;
 }
 
 interface DamageReport {
@@ -54,13 +62,31 @@ interface DamageReport {
   description?: string | null;
   image_urls: string[];
   home_status?: string | null;
+  claim_category?: string | null;
+  housing_tenure?: string | null;
+  damage_end_date?: string | null;
+  damage_duration_days?: number | null;
   status: 'pending' | 'verified' | 'approved' | 'rejected';
   incident_date?: string | null;
   id_card_number?: string | null;
   id_card_image_url?: string | null;
+  bank_book_image_url?: string | null;
+  rental_agreement_image_url?: string | null;
+  house_registration_image_url?: string | null;
   victim_confirmed: boolean;
   created_at: string;
 }
+
+interface ClaimStatusAudit {
+  id: string;
+  old_status: DamageReport['status'];
+  new_status: DamageReport['status'];
+  reason?: string | null;
+  created_at: string;
+  actor?: { full_name?: string | null } | null;
+}
+
+const ADMIN_PAGE_SIZE = 25;
 
 type Tab = 'overview' | 'users' | 'shelters' | 'victims' | 'compensation';
 
@@ -470,6 +496,12 @@ export default function AdminPage() {
         .admin-list { background:var(--surface) !important; border:1px solid var(--line) !important; border-radius:18px !important; box-shadow:0 9px 24px rgba(23,52,60,.045); overflow:hidden; }
         .admin-row { padding:16px !important; transition:background .18s ease; }
         .admin-row:hover { background:#F5F8FC; }
+        .admin-victim-row { display:grid !important; grid-template-columns:minmax(0,1fr) auto auto; align-items:center !important; gap:12px !important; }
+        .admin-victim-row-copy { min-width:0; }
+        .admin-victim-row-copy > div { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .admin-claim-row { display:grid !important; grid-template-columns:minmax(0,1fr) auto auto; align-items:center !important; gap:12px !important; }
+        .admin-claim-row-copy { min-width:0; }
+        .admin-claim-row-copy > div { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .admin-shelter-card,.admin-claim-card { background:var(--surface) !important; border:1px solid var(--line) !important; border-radius:18px !important; padding:16px !important; box-shadow:0 7px 20px rgba(23,52,60,.04); }
         .admin-add-button { background:linear-gradient(135deg,var(--primary),var(--primary-strong)) !important; border-radius:14px !important; box-shadow:0 8px 18px rgba(4,102,200,.18); }
         .admin-form-card { background:#fff !important; border:1px solid var(--line) !important; border-radius:18px !important; padding:18px !important; }
@@ -480,6 +512,12 @@ export default function AdminPage() {
         .admin-approved-total > div:first-child { color:rgba(255,255,255,.68) !important; }.admin-approved-total > div:last-child { color:#DCEBFA !important; }
         .admin-status-grid { gap:12px !important; }.admin-status-card { border-radius:18px !important; min-height:90px; background:#fff; }
         .admin-claims { gap:12px !important; }
+        .admin-detail-workspace { display:grid; grid-template-columns:minmax(0,1fr); gap:16px; align-items:start; }
+        .admin-detail-workspace.is-open { grid-template-columns:minmax(320px,.76fr) minmax(560px,1.24fr); }
+        .admin-detail-workspace > .admin-list,.admin-detail-workspace > .admin-claims { min-width:0; }
+        .admin-detail-panel { position:sticky; top:100px; max-height:calc(100vh - 124px); overflow-y:auto; border:1px solid #DDE7F1; border-radius:20px; background:#fff; box-shadow:0 14px 34px rgba(0,24,69,.10); }
+        .admin-detail-panel-head { position:sticky; z-index:1; top:0; display:flex; align-items:flex-start; justify-content:space-between; gap:14px; padding:20px 22px 16px; border-bottom:1px solid #E6EDF5; background:rgba(255,255,255,.97); backdrop-filter:blur(10px); }
+        .admin-detail-panel-content { display:grid; gap:16px; padding:20px 22px 24px; }
         /* Top workspace navigation + editorial dashboard layout */
         .admin-shell { --teal:#0466C8; --saffron:#7D8597; --orange:#5C677D; --coral:#001845; --ice:#F1F6FC; background:linear-gradient(150deg,#F9FBFE 0%,#F3F7FC 52%,#EAF1F9 100%) !important; }
         .admin-header { height:auto; min-height:78px; padding:0 30px !important; position:sticky; top:0; }
@@ -534,9 +572,9 @@ export default function AdminPage() {
         .claim-legend { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }.claim-legend-item { display:grid; grid-template-columns:8px 1fr; gap:7px; align-items:center; color:var(--slate-soft); font-size:9px; }.claim-dot { width:8px; height:8px; border-radius:3px; }.claim-legend-item b { color:var(--navy-deep); font-size:11px; }
         .urgent-inline { margin-top:18px; display:flex; align-items:center; gap:10px; padding:13px 16px; border-left:4px solid var(--primary); border-radius:0 14px 14px 0; background:#EAF3FC; color:var(--primary-deep); font-size:12px; }
         @media(max-width:900px){.admin-layout{grid-template-columns:1fr;padding:20px !important;gap:18px}.admin-sidebar{position:static;padding:9px;border-radius:17px;overflow-x:auto}.admin-sidebar-label{display:none}.admin-nav{display:flex !important;min-width:max-content}.admin-tab{width:auto;white-space:nowrap}.admin-tab:hover{transform:translateY(-1px)}.admin-page-heading{margin-top:0}}
-        @media(max-width:1050px){.admin-header-inner{grid-template-columns:auto 1fr auto;gap:16px}.admin-top-nav{justify-content:flex-start;overflow-x:auto;padding:16px 2px}.admin-top-nav .admin-tab{flex:0 0 auto}.overview-grid,.overview-bottom{grid-template-columns:1fr}.overview-capacity{min-height:240px}}
+        @media(max-width:1050px){.admin-header-inner{grid-template-columns:auto 1fr auto;gap:16px}.admin-top-nav{justify-content:flex-start;overflow-x:auto;padding:16px 2px}.admin-top-nav .admin-tab{flex:0 0 auto}.overview-grid,.overview-bottom,.admin-detail-workspace.is-open{grid-template-columns:1fr}.overview-capacity{min-height:240px}.admin-detail-panel{position:static;max-height:none}}
         @media(max-width:900px){.admin-layout{padding:22px 20px 42px !important}.admin-page-heading{margin-top:0}}
-        @media(max-width:720px){.admin-header{padding:0 15px !important}.admin-header-inner{grid-template-columns:1fr auto;gap:8px;padding-top:8px}.admin-brand{min-height:52px}.admin-top-nav{grid-column:1/-1;grid-row:2;padding:6px 0 10px;justify-content:flex-start}.admin-logout{grid-column:2;grid-row:1}.admin-layout{padding:20px 13px 36px !important}.overview-hero{grid-template-columns:1fr;padding:24px;gap:22px}.overview-grid,.overview-bottom{gap:13px;margin-top:13px}.flow-row{grid-template-columns:78px minmax(0,1fr) 28px}.claim-legend{grid-template-columns:repeat(2,1fr)}.admin-date{display:none}}
+        @media(max-width:720px){.admin-header{padding:0 15px !important}.admin-header-inner{grid-template-columns:1fr auto;gap:8px;padding-top:8px}.admin-brand{min-height:52px}.admin-top-nav{grid-column:1/-1;grid-row:2;padding:6px 0 10px;justify-content:flex-start}.admin-logout{grid-column:2;grid-row:1}.admin-layout{padding:20px 13px 36px !important}.overview-hero{grid-template-columns:1fr;padding:24px;gap:22px}.overview-grid,.overview-bottom{gap:13px;margin-top:13px}.flow-row{grid-template-columns:78px minmax(0,1fr) 28px}.claim-legend{grid-template-columns:repeat(2,1fr)}.admin-date{display:none}.admin-victim-row,.admin-claim-row{grid-template-columns:minmax(0,1fr) auto !important}.admin-victim-row > button,.admin-claim-row > button{grid-column:1/-1;width:100%}.admin-victim-row-copy > div,.admin-claim-row-copy > div{white-space:normal}}
         @media(max-width:480px){.admin-brand-user{max-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.admin-logout{padding:8px 9px !important;font-size:0 !important}.admin-logout span{font-size:14px}.admin-page-heading{align-items:flex-start}.admin-page-heading h1{font-size:24px}.overview-hero-numbers{grid-template-columns:1fr 1fr}.workforce-list{grid-template-columns:1fr;gap:12px}.workforce-item{padding:10px 0 0;border:0;border-top:1px solid rgba(255,255,255,.16)}.workforce-item:first-child{padding-top:0;border:0}.admin-summary-grid,.admin-status-grid{grid-template-columns:repeat(2,minmax(0,1fr)) !important}.admin-toolbar input,.admin-toolbar select{max-width:none !important;width:100% !important}.admin-row{align-items:flex-start !important}.admin-panel [style*='repeat(3']{grid-template-columns:1fr !important}}
       `}</style>
       <div className="admin-shell" style={{ minHeight: '100vh', background: '#F5F8FC', fontFamily: "var(--font-thai), 'IBM Plex Sans Thai', sans-serif" }}>
@@ -900,21 +938,49 @@ function VictimsTab() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
   const [search, setSearch] = useState('');
+  const [selectedReport, setSelectedReport] = useState<SOSReport | null>(null);
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchReports = async (targetPage = 1) => {
+    setRefreshing(true);
+    setLoadError(null);
+    try {
+      let query = supabase
+        .from('sos_reports')
+        .select('*', { count: 'exact' });
+      if (statusFilter !== 'all') query = query.eq('status', statusFilter);
+      const normalizedSearch = search.trim().replace(/[%_,()]/g, '');
+      if (normalizedSearch) query = query.or(`full_name.ilike.%${normalizedSearch}%,phone.ilike.%${normalizedSearch}%`);
+      const from = (targetPage - 1) * ADMIN_PAGE_SIZE;
+      const { data, error, count } = await query
+        .order('created_at', { ascending: false })
+        .range(from, from + ADMIN_PAGE_SIZE - 1);
+      if (error) throw error;
+      setReports((data as SOSReport[]) ?? []);
+      setTotalCount(count ?? 0);
+      setPage(targetPage);
+    } catch (err: unknown) {
+      setLoadError(err instanceof Error ? err.message : 'ไม่สามารถโหลดข้อมูลผู้ประสบภัยได้');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchReports = async () => {
-      const { data } = await supabase.from('sos_reports').select('*').order('created_at', { ascending: false }).limit(200);
-      setReports((data as SOSReport[]) ?? []);
-      setLoading(false);
-    };
-    fetchReports();
-  }, []);
+    void fetchReports(1);
+    const channel = supabase
+      .channel(`admin-victims-${statusFilter}-${search}`)
+      .on('postgres_changes' as never, { event: '*', schema: 'public', table: 'sos_reports' }, () => { void fetchReports(1); })
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [statusFilter, search]);
 
-  const filtered = reports.filter(r => {
-    if (statusFilter !== 'all' && r.status !== statusFilter) return false;
-    if (search && !r.full_name.toLowerCase().includes(search.toLowerCase()) && !r.phone.includes(search)) return false;
-    return true;
-  });
+  const totalPages = Math.max(1, Math.ceil(totalCount / ADMIN_PAGE_SIZE));
+  const filtered = reports;
 
   if (loading) return <AdminPanelSkeleton variant="victims" />;
 
@@ -926,16 +992,18 @@ function VictimsTab() {
           <option value="all">ทุกสถานะ</option>
           {Object.entries(SOS_STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v.text}</option>)}
         </select>
+        <button type="button" onClick={() => void fetchReports(page)} disabled={refreshing} style={{ padding: '9px 13px', border: '1px solid #BAD4EE', borderRadius: 10, color: '#0466C8', background: '#F5FAFF', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{refreshing ? 'กำลังรีเฟรช…' : 'รีเฟรช'}</button>
       </div>
 
+      <div className={`admin-detail-workspace ${selectedReport ? 'is-open' : ''}`}>
       <div className="admin-list" style={{ background: '#fff', borderRadius: 16, border: '1px solid #DDE3EC', overflow: 'hidden' }}>
-        {filtered.length === 0 ? (
+        {loadError ? <AdminLoadError message={loadError} onRetry={() => void fetchReports(page)} /> : filtered.length === 0 ? (
           <div style={{ padding: 30, textAlign: 'center', color: '#7D8597', fontSize: 13 }}>ไม่พบข้อมูล</div>
         ) : filtered.map((r, i) => {
           const st = SOS_STATUS_LABEL[r.status] ?? SOS_STATUS_LABEL.pending;
           return (
-            <div className="admin-row" key={r.id} style={{ padding: 14, borderBottom: i < filtered.length - 1 ? '1px solid #E8EDF4' : 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <div>
+            <div className="admin-row admin-victim-row" key={r.id} style={{ padding: 14, borderBottom: i < filtered.length - 1 ? '1px solid #E8EDF4' : 'none' }}>
+              <div className="admin-victim-row-copy">
                 <div style={{ fontSize: 13, fontWeight: 700, color: '#001845' }}>{r.full_name}</div>
                 <div style={{ fontSize: 11, color: '#7D8597' }}>
                   {r.phone} · {r.district} {r.province} · ผู้ใหญ่ {r.adult_count} เด็ก {r.child_count} สูงอายุ {r.elder_count}
@@ -944,10 +1012,14 @@ function VictimsTab() {
               <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 999, color: st.color, background: st.bg }}>
                 {st.text}
               </span>
+              <button type="button" onClick={() => setSelectedReport(r)} style={{ padding: '8px 11px', border: '1px solid #BAD4EE', borderRadius: 10, color: '#0466C8', background: '#F5FAFF', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>ดูรายละเอียด</button>
             </div>
           );
         })}
       </div>
+      {selectedReport && <VictimDetailPanel report={selectedReport} onClose={() => setSelectedReport(null)} />}
+      </div>
+      {!loadError && totalCount > 0 && <AdminPagination page={page} totalPages={totalPages} totalCount={totalCount} onPageChange={(nextPage) => void fetchReports(nextPage)} />}
     </div>
   );
 }
@@ -1143,22 +1215,45 @@ function CompensationTab() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('pending');
   const [search, setSearch] = useState('');
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [selectedClaim, setSelectedClaim] = useState<DamageReport | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const fetchClaims = async () => {
-    const { data } = await supabase.from('damage_reports').select('*').order('created_at', { ascending: false });
-    setClaims((data as DamageReport[]) ?? []);
-    setLoading(false);
+    setRefreshing(true);
+    setLoadError(null);
+    try {
+      const { data, error } = await supabase.from('damage_reports').select('*').order('created_at', { ascending: false });
+      if (error) throw error;
+      setClaims((data as DamageReport[]) ?? []);
+    } catch (err: unknown) {
+      setLoadError(err instanceof Error ? err.message : 'ไม่สามารถโหลดคำร้องเยียวยาได้');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   };
-  useEffect(() => { fetchClaims(); }, []);
+  useEffect(() => {
+    void fetchClaims();
+    const channel = supabase
+      .channel('admin-compensation')
+      .on('postgres_changes' as never, { event: '*', schema: 'public', table: 'damage_reports' }, () => { void fetchClaims(); })
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, []);
 
-  const updateStatus = async (id: string, status: DamageReport['status']) => {
+  const updateStatus = async (id: string, status: DamageReport['status'], reason?: string) => {
     setSavingId(id);
     try {
-      const { error } = await supabase.from('damage_reports').update({ status }).eq('id', id);
+      const { error } = await supabase.rpc('admin_update_damage_report_status', {
+        p_report_id: id,
+        p_status: status,
+        p_reason: reason?.trim() || null,
+      });
       if (error) throw error;
       setClaims(prev => prev.map(c => c.id === id ? { ...c, status } : c));
+      setSelectedClaim(prev => prev?.id === id ? { ...prev, status } : prev);
     } catch (err: any) {
       alert(`บันทึกไม่สำเร็จ: ${err.message}`);
     } finally {
@@ -1205,23 +1300,22 @@ function CompensationTab() {
           <option value="all">ทุกสถานะ</option>
           {Object.entries(CLAIM_STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v.text}</option>)}
         </select>
+        <button type="button" onClick={() => void fetchClaims()} disabled={refreshing} style={{ padding: '9px 13px', border: '1px solid #BAD4EE', borderRadius: 10, color: '#0466C8', background: '#F5FAFF', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{refreshing ? 'กำลังรีเฟรช…' : 'รีเฟรช'}</button>
       </div>
 
+      <div className={`admin-detail-workspace ${selectedClaim ? 'is-open' : ''}`}>
       <div className="admin-claims" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {filtered.length === 0 ? (
+        {loadError ? <AdminLoadError message={loadError} onRetry={() => void fetchClaims()} /> : filtered.length === 0 ? (
           <div style={{ padding: 30, textAlign: 'center', color: '#7D8597', fontSize: 13, background: '#fff', borderRadius: 14, border: '1px solid #DDE3EC' }}>
             ไม่พบคำขอในหมวดนี้
           </div>
         ) : filtered.map(c => {
           const st = CLAIM_STATUS_LABEL[c.status];
-          const expanded = expandedId === c.id;
+          const expanded = false;
           return (
             <div className="admin-claim-card" key={c.id} style={{ background: '#fff', borderRadius: 14, border: '1px solid #DDE3EC', padding: 14 }}>
-              <div
-                onClick={() => setExpandedId(expanded ? null : c.id)}
-                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', gap: 10, flexWrap: 'wrap' }}
-              >
-                <div>
+              <div className="admin-claim-row">
+                <div className="admin-claim-row-copy">
                   <div style={{ fontSize: 13, fontWeight: 700, color: '#001845' }}>
                     {c.full_name} {!c.victim_confirmed && <span style={{ fontSize: 10, color: '#33415C' }}>(ยังไม่ยืนยันตัวตน)</span>}
                   </div>
@@ -1232,6 +1326,7 @@ function CompensationTab() {
                 <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 999, color: st.color, background: st.bg }}>
                   {st.text}
                 </span>
+                <button type="button" onClick={() => setSelectedClaim(c)} style={{ padding: '8px 11px', border: '1px solid #BAD4EE', borderRadius: 10, color: '#0466C8', background: '#F5FAFF', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>ดูรายละเอียดคำร้อง</button>
               </div>
 
               {expanded && (
@@ -1286,6 +1381,151 @@ function CompensationTab() {
           );
         })}
       </div>
+      {selectedClaim && <ClaimDetailPanel claim={selectedClaim} saving={savingId === selectedClaim.id} onStatusChange={updateStatus} onClose={() => setSelectedClaim(null)} />}
+      </div>
     </div>
   );
+}
+
+function AdminLoadError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return <div role="alert" style={{ display: 'grid', justifyItems: 'center', gap: 10, padding: 30, textAlign: 'center', color: '#6A3D00', background: '#FFF8E8', fontSize: 13 }}>
+    <strong>โหลดข้อมูลไม่สำเร็จ</strong><span>{message}</span>
+    <button type="button" onClick={onRetry} style={{ padding: '8px 13px', border: '1px solid #D8B16A', borderRadius: 10, color: '#6A3D00', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>ลองใหม่</button>
+  </div>;
+}
+
+function AdminPagination({ page, totalPages, totalCount, onPageChange }: { page: number; totalPages: number; totalCount: number; onPageChange: (page: number) => void }) {
+  if (totalPages <= 1) return <div style={{ padding: '11px 2px 0', color: '#7D8597', fontSize: 12 }}>ทั้งหมด {totalCount} รายการ</div>;
+  return <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '12px 2px 0', color: '#5C677D', fontSize: 12 }}>
+    <span>ทั้งหมด {totalCount} รายการ · หน้า {page} จาก {totalPages}</span>
+    <div style={{ display: 'flex', gap: 7 }}>
+      <button type="button" disabled={page <= 1} onClick={() => onPageChange(page - 1)} style={{ padding: '7px 11px', border: '1px solid #D4E0EC', borderRadius: 9, color: '#0353A4', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>ก่อนหน้า</button>
+      <button type="button" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)} style={{ padding: '7px 11px', border: '1px solid #D4E0EC', borderRadius: 9, color: '#0353A4', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>ถัดไป</button>
+    </div>
+  </div>;
+}
+
+function AdminDetailPanel({ title, eyebrow, onClose, children }: { title: string; eyebrow: string; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <aside className="admin-detail-panel" aria-label={`รายละเอียด ${title}`}>
+      <section style={{ width: '100%', background: '#fff' }}>
+        <div style={{ position: 'sticky', zIndex: 1, top: 0, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, padding: '26px 30px 20px', borderBottom: '1px solid #E6EDF5', background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(10px)' }}>
+          <div><small style={{ display: 'block', color: '#0466C8', fontSize: 11, fontWeight: 800, letterSpacing: '.12em' }}>{eyebrow}</small><h2 style={{ margin: '6px 0 0', color: '#001845', fontSize: 25, letterSpacing: '-0.02em' }}>{title}</h2></div>
+          <button type="button" onClick={onClose} aria-label="ปิดรายละเอียด" style={{ width: 36, height: 36, border: '1px solid #DDE3EC', borderRadius: 10, color: '#5C677D', background: '#F8FAFD', fontSize: 24, lineHeight: 1, cursor: 'pointer' }}>×</button>
+        </div>
+        <div style={{ display: 'grid', gap: 18, padding: '24px 30px 30px' }}>{children}</div>
+      </section>
+    </aside>
+  );
+}
+
+function DetailGrid({ children }: { children: React.ReactNode }) {
+  return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>{children}</div>;
+}
+
+function DetailItem({ label, children, wide = false }: { label: string; children: React.ReactNode; wide?: boolean }) {
+  return <div style={{ gridColumn: wide ? '1 / -1' : undefined, minHeight: 78, padding: '13px 14px', border: '1px solid #DDE7F1', borderRadius: 13, background: 'linear-gradient(145deg, #FBFCFE, #F5F8FC)' }}><small style={{ display: 'block', color: '#7D8597', fontSize: 11 }}>{label}</small><strong style={{ display: 'block', marginTop: 5, color: '#17355A', fontSize: 14, lineHeight: 1.5, overflowWrap: 'anywhere' }}>{children}</strong></div>;
+}
+
+function VictimDetailPanel({ report, onClose }: { report: SOSReport; onClose: () => void }) {
+  const status = SOS_STATUS_LABEL[report.status] ?? SOS_STATUS_LABEL.pending;
+  const totalPeople = (report.adult_count ?? 0) + (report.child_count ?? 0) + (report.elder_count ?? 0);
+  const hasCoordinates = report.lat !== null && report.lat !== undefined && report.lng !== null && report.lng !== undefined;
+  return <AdminDetailPanel title={report.full_name} eyebrow="SOS REQUEST DETAIL" onClose={onClose}>
+    <span style={{ justifySelf: 'start', padding: '5px 10px', borderRadius: 999, color: status.color, background: status.bg, fontSize: 12, fontWeight: 800 }}>{status.text}</span>
+    <DetailGrid>
+      <DetailItem label="เบอร์โทรศัพท์">{report.phone}</DetailItem>
+      <DetailItem label="แจ้งเมื่อ">{formatAdminDateTime(report.created_at)}</DetailItem>
+      <DetailItem label="จำนวนผู้ประสบภัย">{totalPeople} คน (ผู้ใหญ่ {report.adult_count ?? 0} · เด็ก {report.child_count ?? 0} · ผู้สูงอายุ {report.elder_count ?? 0})</DetailItem>
+      <DetailItem label="ระดับความเร่งด่วน">{report.urgency_level || '-'}</DetailItem>
+      <DetailItem label="พื้นที่เสียหาย" wide>{[report.address_details, report.sub_district && `ต.${report.sub_district}`, `อ.${report.district}`, `จ.${report.province}`].filter(Boolean).join(' ')}</DetailItem>
+      <DetailItem label="ระดับน้ำโดยประมาณ">{report.water_level != null ? `${report.water_level} เมตร` : 'ไม่ระบุ'}</DetailItem>
+      <DetailItem label="สิ่งของที่ต้องการ">{report.needed_items?.length ? report.needed_items.join(', ') : 'ไม่ระบุ'}</DetailItem>
+      <DetailItem label="ความต้องการพิเศษ / หมายเหตุ" wide>{report.special_needs || 'ไม่ระบุ'}</DetailItem>
+      {hasCoordinates && <DetailItem label="พิกัด GPS" wide><a href={`https://www.google.com/maps?q=${report.lat},${report.lng}`} target="_blank" rel="noreferrer" style={{ color: '#0466C8' }}>{report.lat?.toFixed(6)}, {report.lng?.toFixed(6)} · เปิดแผนที่</a></DetailItem>}
+    </DetailGrid>
+  </AdminDetailPanel>;
+}
+
+function ClaimDetailPanel({ claim, saving, onStatusChange, onClose }: { claim: DamageReport; saving: boolean; onStatusChange: (id: string, status: DamageReport['status'], reason?: string) => Promise<void>; onClose: () => void }) {
+  const status = CLAIM_STATUS_LABEL[claim.status];
+  const [reviewReason, setReviewReason] = useState('');
+  const [history, setHistory] = useState<ClaimStatusAudit[]>([]);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const loadHistory = async () => {
+      const { data, error } = await supabase
+        .from('damage_report_status_audit')
+        .select('id, old_status, new_status, reason, created_at, actor:profiles!damage_report_status_audit_actor_id_fkey(full_name)')
+        .eq('damage_report_id', claim.id)
+        .order('created_at', { ascending: false });
+      if (!active) return;
+      if (error) {
+        setHistoryError(error.message);
+        return;
+      }
+      setHistory((data as unknown as ClaimStatusAudit[]) ?? []);
+      setHistoryError(null);
+    };
+    void loadHistory();
+    return () => { active = false; };
+  }, [claim.id, claim.status]);
+  const documentLinks = [
+    { label: 'บัตรประชาชน', url: claim.id_card_image_url },
+    { label: 'หน้าสมุดบัญชี', url: claim.bank_book_image_url },
+    { label: 'สัญญาเช่า / หลักฐานหอพัก', url: claim.rental_agreement_image_url },
+    { label: 'สำเนาทะเบียนบ้าน', url: claim.house_registration_image_url },
+  ].filter((item): item is { label: string; url: string } => Boolean(item.url));
+  return <AdminDetailPanel title={claim.full_name} eyebrow="COMPENSATION CLAIM DETAIL" onClose={onClose}>
+    <span style={{ justifySelf: 'start', padding: '5px 10px', borderRadius: 999, color: status.color, background: status.bg, fontSize: 12, fontWeight: 800 }}>{status.text}</span>
+    {!claim.victim_confirmed && <div style={{ padding: '11px 13px', borderRadius: 11, color: '#6A3D00', background: '#FFF5DF', fontSize: 12, fontWeight: 700 }}>ผู้ประสบภัยยังไม่ได้ยืนยันข้อมูล จึงยังไม่สามารถตรวจสอบหรืออนุมัติได้</div>}
+    <DetailGrid>
+      <DetailItem label="เบอร์โทรศัพท์">{claim.phone}</DetailItem>
+      <DetailItem label="ยื่นเมื่อ">{formatAdminDateTime(claim.created_at)}</DetailItem>
+      <DetailItem label="ประเภทคำร้อง">{DAMAGE_TYPE_LABEL[claim.damage_type ?? ''] ?? claim.claim_category ?? 'ไม่ระบุ'}</DetailItem>
+      <DetailItem label="มูลค่าความเสียหาย">{claim.damage_value != null ? `${Number(claim.damage_value).toLocaleString('th-TH')} บาท` : 'ไม่ระบุ'}</DetailItem>
+      <DetailItem label="พื้นที่เสียหาย" wide>{[claim.address_details, claim.sub_district && `ต.${claim.sub_district}`, `อ.${claim.district}`, `จ.${claim.province}`].filter(Boolean).join(' ')}</DetailItem>
+      <DetailItem label="ช่วงวันที่เสียหาย">{formatAdminDate(claim.incident_date)} – {formatAdminDate(claim.damage_end_date ?? claim.incident_date)}{claim.damage_duration_days ? ` (${claim.damage_duration_days} วัน)` : ''}</DetailItem>
+      <DetailItem label="เลขบัตรประชาชน">{claim.id_card_number || 'ยังไม่ได้ระบุ'}</DetailItem>
+      <DetailItem label="รายละเอียดความเสียหาย" wide>{claim.description || 'ไม่ระบุ'}</DetailItem>
+    </DetailGrid>
+    <div style={{ display: 'grid', gap: 8 }}>
+      <strong style={{ color: '#243B5A', fontSize: 13 }}>เอกสารและหลักฐาน</strong>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        {documentLinks.map((item) => <a key={item.label} href={item.url} target="_blank" rel="noreferrer" style={{ padding: '8px 10px', border: '1px solid #BAD4EE', borderRadius: 9, color: '#0466C8', background: '#F5FAFF', fontSize: 12, fontWeight: 700 }}>{item.label}</a>)}
+        {claim.image_urls?.map((url, index) => <a key={url} href={url} target="_blank" rel="noreferrer" style={{ padding: '8px 10px', border: '1px solid #DDE3EC', borderRadius: 9, color: '#33415C', background: '#fff', fontSize: 12, fontWeight: 700 }}>รูปความเสียหาย {index + 1}</a>)}
+        {!documentLinks.length && !claim.image_urls?.length && <span style={{ color: '#7D8597', fontSize: 12 }}>ไม่มีไฟล์แนบ</span>}
+      </div>
+    </div>
+    <div style={{ display: 'grid', gap: 8, padding: '14px', border: '1px solid #DDE7F1', borderRadius: 13, background: '#F8FBFE' }}>
+      <label htmlFor={`claim-review-reason-${claim.id}`} style={{ color: '#243B5A', fontSize: 13, fontWeight: 800 }}>บันทึกผลการพิจารณา</label>
+      <textarea id={`claim-review-reason-${claim.id}`} value={reviewReason} onChange={(event) => setReviewReason(event.target.value)} placeholder="จำเป็นเมื่อไม่อนุมัติ เช่น เอกสารไม่ครบ หรือข้อมูลไม่ตรงกัน" rows={3} style={{ width: '100%', resize: 'vertical', padding: 10, border: '1px solid #C9D8E8', borderRadius: 10, color: '#17355A', background: '#fff', fontFamily: 'inherit', fontSize: 12 }} />
+      <small style={{ color: '#7D8597', fontSize: 11 }}>ระบบจะบันทึกผู้ดำเนินการ เวลา สถานะเดิม/ใหม่ และเหตุผลไว้ในประวัติ</small>
+    </div>
+    <div style={{ display: 'grid', gap: 8 }}>
+      <strong style={{ color: '#243B5A', fontSize: 13 }}>ประวัติการพิจารณา</strong>
+      {historyError ? <span style={{ color: '#A15900', fontSize: 12 }}>ยังโหลดประวัติไม่ได้: {historyError}</span> : history.length === 0 ? <span style={{ color: '#7D8597', fontSize: 12 }}>ยังไม่มีการพิจารณา</span> : <div style={{ display: 'grid', gap: 8 }}>
+        {history.map((item) => <div key={item.id} style={{ padding: '10px 11px', border: '1px solid #E2EAF2', borderRadius: 10, background: '#fff', color: '#33415C', fontSize: 12 }}>
+          <strong style={{ color: '#17355A' }}>{CLAIM_STATUS_LABEL[item.old_status]?.text ?? item.old_status} → {CLAIM_STATUS_LABEL[item.new_status]?.text ?? item.new_status}</strong>
+          <span style={{ display: 'block', marginTop: 3, color: '#7D8597' }}>{item.actor?.full_name ?? 'ผู้ดูแลระบบ'} · {formatAdminDateTime(item.created_at)}</span>
+          {item.reason && <span style={{ display: 'block', marginTop: 4 }}>เหตุผล: {item.reason}</span>}
+        </div>)}
+      </div>}
+    </div>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, paddingTop: 4 }}>
+      <button type="button" onClick={() => void onStatusChange(claim.id, 'verified', reviewReason)} disabled={saving || !claim.victim_confirmed || claim.status !== 'pending'} style={{ minHeight: 42, border: '1px solid #BAD4EE', borderRadius: 10, color: '#0466C8', background: '#EAF3FC', fontSize: 12, fontWeight: 800, cursor: 'pointer', opacity: !claim.victim_confirmed || claim.status !== 'pending' ? .5 : 1 }}>ตรวจสอบแล้ว</button>
+      <button type="button" onClick={() => void onStatusChange(claim.id, 'approved', reviewReason)} disabled={saving || !claim.victim_confirmed || claim.status !== 'verified'} style={{ minHeight: 42, border: '1px solid #B7CBE0', borderRadius: 10, color: '#0353A4', background: '#E5EFF9', fontSize: 12, fontWeight: 800, cursor: 'pointer', opacity: !claim.victim_confirmed || claim.status !== 'verified' ? .5 : 1 }}>อนุมัติ</button>
+      <button type="button" onClick={() => void onStatusChange(claim.id, 'rejected', reviewReason)} disabled={saving || !reviewReason.trim() || !['pending', 'verified'].includes(claim.status)} style={{ minHeight: 42, border: '1px solid #C5CBD5', borderRadius: 10, color: '#001845', background: '#E8EBF0', fontSize: 12, fontWeight: 800, cursor: 'pointer', opacity: !reviewReason.trim() || !['pending', 'verified'].includes(claim.status) ? .5 : 1 }}>ไม่อนุมัติ</button>
+    </div>
+  </AdminDetailPanel>;
+}
+
+function formatAdminDate(value: string | null | undefined) {
+  return value ? new Date(`${value.slice(0, 10)}T00:00:00`).toLocaleDateString('th-TH') : '-';
+}
+
+function formatAdminDateTime(value: string) {
+  return new Date(value).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
 }

@@ -44,6 +44,24 @@ interface Shelter {
   current_occupancy?: number | null;
 }
 
+type AssignmentStage = 'accepted' | 'en_route' | 'on_scene';
+
+interface ActiveAssignment {
+  rescuerId: string;
+  status: AssignmentStage;
+}
+
+interface AssignmentRealtimeRow {
+  sos_report_id?: string;
+  rescuer_id?: string;
+  status?: string;
+}
+
+interface MyActiveAssignmentRow {
+  sos_report_id: string;
+  status: string;
+}
+
 type AgeGroup = 'adult' | 'child' | 'elder';
 type ExceptionDisposition = 'hospital' | 'deceased' | 'other_safe';
 
@@ -79,7 +97,7 @@ interface OutcomeDraft {
 }
 
 const calcDistance = (lat1: number, lng1: number, lat2: number, lng2: number) => {
-  if (!lat1 || !lng1 || !lat2 || !lng2) return null;
+  if (![lat1, lng1, lat2, lng2].every(Number.isFinite)) return null;
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLng = (lng2 - lng1) * Math.PI / 180;
@@ -134,6 +152,12 @@ const STATUS_LABEL: Record<string, string> = {
   closed: 'ปิดเคส',
 };
 
+const getCoordinates = (lat?: number | null, lng?: number | null) => (
+  typeof lat === 'number' && Number.isFinite(lat) && typeof lng === 'number' && Number.isFinite(lng)
+    ? { lat, lng }
+    : null
+);
+
 const AGE_GROUP_LABEL: Record<AgeGroup, string> = {
   adult: 'ผู้ใหญ่',
   child: 'เด็ก',
@@ -180,7 +204,7 @@ export default function OfficerDashboard() {
   const [navigatingId, setNavigatingId] = useState<string | null>(null);
   // เก็บขั้นตอนปัจจุบันของแต่ละงานจากตาราง assignments (accepted / en_route / on_scene)
   // ใช้แสดงผลว่าเจ้าหน้าที่กดปุ่ม "กำลังเดินทาง" / "ถึงที่เกิดเหตุ" ไปแล้วจริง
-  const [jobStage, setJobStage] = useState<Record<string, string>>({});
+  const [activeAssignments, setActiveAssignments] = useState<Record<string, ActiveAssignment>>({});
   // รายชื่อศูนย์พักพิงทั้งหมด ไว้ให้เลือกตอนยืนยันผลว่าไปส่งศูนย์ไหน
   const [shelters, setShelters] = useState<Shelter[]>([]);
   // ข้อมูล modal "ยืนยันผลการช่วยเหลือ" ที่กำลังเปิดอยู่ (null = ปิดอยู่)
@@ -190,6 +214,14 @@ export default function OfficerDashboard() {
   // ข้อความแจ้งปัญหาสิทธิ์การเข้าใช้งาน (role/ศูนย์ยังไม่ถูกตั้งค่า) — โชว์ตรงๆ แทนการเด้งกลับ login แบบเงียบๆ
   // เพราะเคยทำให้ผู้ใช้เข้าใจผิดว่า session หลุด ทั้งที่จริงยัง login ค้างอยู่
   const [accessError, setAccessError] = useState<string | null>(null);
+
+  const openMetricDetails = (status: string) => {
+    setFilterStatus(status);
+    setFilterDistrict('all');
+    window.requestAnimationFrame(() => {
+      document.getElementById('mission-queue')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
 
   useEffect(() => {
     const init = async () => {
@@ -252,14 +284,20 @@ export default function OfficerDashboard() {
     // ดึงขั้นตอนล่าสุดของงานที่ยังไม่จบ (accepted/en_route/on_scene) มาแสดงตอนโหลดหน้า
     // กันปัญหา refresh หน้าแล้ว badge สถานะหาย ทั้งที่ DB มีค่าอยู่แล้ว
     const fetchJobStages = async () => {
-      const { data } = await supabase
-        .from('assignments')
-        .select('sos_report_id, status')
-        .in('status', ['accepted', 'en_route', 'on_scene']);
+      const { data, error } = await supabase.rpc('get_my_active_rescue_assignments');
+      if (error?.code === 'PGRST202' || error?.message?.includes('get_my_active_rescue_assignments')) {
+        console.error('Missing migration 202609050006 for active rescue assignments');
+        return;
+      }
       if (data) {
-        const map: Record<string, string> = {};
-        data.forEach((a: any) => { map[a.sos_report_id] = a.status; });
-        setJobStage(map);
+        const map: Record<string, ActiveAssignment> = {};
+        (data as MyActiveAssignmentRow[]).forEach((assignment) => {
+          const stage = assignment.status as AssignmentStage;
+          if (assignment.sos_report_id && ['accepted', 'en_route', 'on_scene'].includes(stage)) {
+            map[assignment.sos_report_id] = { rescuerId: profile.id, status: stage };
+          }
+        });
+        setActiveAssignments(map);
       }
     };
 
@@ -270,9 +308,13 @@ export default function OfficerDashboard() {
       setShelters((data as Shelter[]) ?? []);
     };
 
-    fetchReports();
-    fetchJobStages();
-    fetchShelters();
+    const refreshDashboard = () => {
+      void fetchReports();
+      void fetchJobStages();
+      void fetchShelters();
+    };
+
+    refreshDashboard();
 
     const channel = supabase.channel('sos_realtime')
       .on('postgres_changes' as any,
@@ -284,8 +326,11 @@ export default function OfficerDashboard() {
             setReports(prev => prev.map(r => r.id === payload.new.id ? payload.new as SOSReport : r));
           else if (payload.eventType === 'DELETE')
             setReports(prev => prev.filter(r => r.id !== payload.old.id));
+          refreshDashboard();
         }
-      ).subscribe();
+      ).subscribe((status) => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') refreshDashboard();
+      });
 
     // ฟัง realtime การเปลี่ยนสถานะของ assignments ด้วย
     // ทำให้เจ้าหน้าที่คนอื่นที่เปิดหน้านี้อยู่เห็นขั้นตอนงานอัปเดตพร้อมกัน
@@ -293,23 +338,50 @@ export default function OfficerDashboard() {
       .on('postgres_changes' as any,
         { event: '*', schema: 'public', table: 'assignments' },
         (payload: any) => {
-          const row = payload.new ?? payload.old;
+          const row = (payload.new ?? payload.old) as AssignmentRealtimeRow;
           if (!row?.sos_report_id) return;
-          setJobStage(prev => {
+          const reportId = row.sos_report_id;
+          setActiveAssignments(prev => {
             const next = { ...prev };
-            if (payload.eventType === 'DELETE' || ['completed', 'cannot_reach'].includes(row.status)) {
-              delete next[row.sos_report_id];
-            } else {
-              next[row.sos_report_id] = row.status;
+            if (payload.eventType === 'DELETE' || ['completed', 'cannot_reach'].includes(row.status ?? '')) {
+              delete next[reportId];
+            } else if (row.rescuer_id && ['accepted', 'en_route', 'on_scene'].includes(row.status ?? '')) {
+              next[reportId] = { rescuerId: row.rescuer_id, status: row.status as AssignmentStage };
             }
             return next;
           });
+          refreshDashboard();
         }
-      ).subscribe();
+      ).subscribe((status) => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') refreshDashboard();
+      });
+
+    const shelterChannel = supabase.channel('shelters_realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'shelters' },
+        () => { void fetchShelters(); },
+      )
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') refreshDashboard();
+      });
+
+    // Realtime may be unavailable for a client because of connection/RLS settings.
+    // Polling keeps every rescue dashboard consistent without a manual page refresh.
+    const refreshTimer = window.setInterval(refreshDashboard, 3000);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') refreshDashboard();
+    };
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    window.addEventListener('online', refreshDashboard);
 
     return () => {
+      window.clearInterval(refreshTimer);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+      window.removeEventListener('online', refreshDashboard);
       supabase.removeChannel(channel);
       supabase.removeChannel(assignChannel);
+      supabase.removeChannel(shelterChannel);
     };
   }, [profile]);
 
@@ -317,47 +389,22 @@ export default function OfficerDashboard() {
     if (!profile) return;
     setActionLoading(reportId);
     try {
-      const { data: existing } = await supabase
-        .from('assignments').select('id')
-        .eq('rescuer_id', profile.id)
-        .in('status', ['accepted', 'en_route', 'on_scene'])
-        .maybeSingle();
-
-      if (existing) {
-        alert('⚠️ คุณมีงานที่กำลังดำเนินการอยู่แล้ว กรุณาปิดงานเดิมก่อน');
-        return;
+      const { error } = await supabase.rpc('accept_rescue_assignment', {
+        p_sos_report_id: reportId,
+      });
+      if (error?.code === 'PGRST202' || error?.message?.includes('accept_rescue_assignment')) {
+        throw new Error('ยังไม่ได้ติดตั้งระบบรับงานแบบปลอดภัย กรุณารัน migration 202609050004 ก่อนใช้งาน');
       }
+      if (error) throw error;
 
       setReports(prev => prev.map(r => r.id === reportId ? { ...r, status: 'assigned' } : r));
 
-      const { error: sosErr } = await supabase
-        .from('sos_reports')
-        .update({ status: 'assigned', updated_at: new Date().toISOString() })
-        .eq('id', reportId);
-      if (sosErr) throw sosErr;
-
-      const { error: assignErr } = await supabase
-        .from('assignments')
-        .insert({
-          sos_report_id: reportId,
-          rescuer_id: profile.id,
-          status: 'accepted',
-          accepted_at: new Date().toISOString(),
-        });
-      if (assignErr) throw assignErr;
-
-      await supabase.from('victim_status').upsert(
-        { sos_report_id: reportId, status: 'rescue_assigned', updated_at: new Date().toISOString() },
-        { onConflict: 'sos_report_id' }
-      );
-
       // ← แสดงปุ่มนำทางทันทีหลังรับงาน + อัปเดต badge ขั้นตอนงาน
       setNavigatingId(reportId);
-      setJobStage(prev => ({ ...prev, [reportId]: 'accepted' }));
+      setActiveAssignments(prev => ({ ...prev, [reportId]: { rescuerId: profile.id, status: 'accepted' } }));
 
     } catch (err: any) {
       alert(`รับงานไม่สำเร็จ: ${err.message}`);
-      setReports(prev => prev.map(r => r.id === reportId ? { ...r, status: 'pending' } : r));
     } finally {
       setActionLoading(null);
     }
@@ -370,6 +417,10 @@ export default function OfficerDashboard() {
     notes?: string
   ) => {
     if (!profile) return;
+    if (activeAssignments[reportId]?.rescuerId !== profile.id) {
+      alert('คุณไม่ใช่ผู้รับผิดชอบภารกิจนี้ จึงเปลี่ยนขั้นตอนงานไม่ได้');
+      return;
+    }
     setActionLoading(reportId);
     try {
       setReports(prev => prev.map(r => r.id === reportId ? { ...r, status: newSOSStatus } : r));
@@ -412,9 +463,9 @@ export default function OfficerDashboard() {
 
       // อัปเดต badge ขั้นตอนงานให้ตรงกับสถานะล่าสุดที่เพิ่งเซฟลง DB สำเร็จ
       if (newAssignStatus === 'en_route' || newAssignStatus === 'on_scene') {
-        setJobStage(prev => ({ ...prev, [reportId]: newAssignStatus }));
+        setActiveAssignments(prev => ({ ...prev, [reportId]: { rescuerId: profile.id, status: newAssignStatus } }));
       } else if (newAssignStatus === 'completed' || newAssignStatus === 'cannot_reach') {
-        setJobStage(prev => {
+        setActiveAssignments(prev => {
           const next = { ...prev };
           delete next[reportId];
           return next;
@@ -435,6 +486,10 @@ export default function OfficerDashboard() {
 
   // เปิด modal ยืนยันผลการช่วยเหลือ — ตั้งค่าเริ่มต้นจากเคสที่เลือก
   const openOutcomeModal = (report: SOSReport) => {
+    if (activeAssignments[report.id]?.rescuerId !== profile?.id) {
+      alert('คุณไม่ใช่ผู้รับผิดชอบภารกิจนี้ จึงยืนยันผลการช่วยเหลือไม่ได้');
+      return;
+    }
     setOutcomeDraft({
       reportId: report.id,
       fullName: report.full_name,
@@ -601,6 +656,33 @@ export default function OfficerDashboard() {
     const discrepancyNote = confirmedTotal !== requestedTotal && d.countDiscrepancyReason
       ? `${DISCREPANCY_REASON_LABEL[d.countDiscrepancyReason]}: ${d.countDiscrepancyNote.trim()}`
       : null;
+    const hospitalTotal = d.exceptions
+      .filter(item => item.disposition === 'hospital')
+      .reduce((sum, item) => sum + item.count, 0);
+    const deceasedTotal = d.exceptions
+      .filter(item => item.disposition === 'deceased')
+      .reduce((sum, item) => sum + item.count, 0);
+    const otherTotal = d.exceptions
+      .filter(item => item.disposition === 'other_safe')
+      .reduce((sum, item) => sum + item.count, 0);
+    const primaryDestinationName = d.destinationType === 'shelter'
+      ? selectedShelter?.name ?? 'ศูนย์พักพิง'
+      : d.destinationNote.trim();
+    const destinationParts = [
+      primaryTotal > 0 ? `${primaryDestinationName} ${primaryTotal} คน` : null,
+      hospitalTotal > 0 ? `โรงพยาบาล ${hospitalTotal} คน` : null,
+      deceasedTotal > 0 ? `เสียชีวิต ${deceasedTotal} คน` : null,
+      otherTotal > 0 ? `ปลายทางอื่น ${otherTotal} คน` : null,
+    ].filter(Boolean);
+    const victimStatus = d.mode === 'rescued'
+      ? (d.destinationType === 'shelter' && primaryTotal > 0 ? 'at_shelter' : 'rescued')
+      : 'unknown';
+    const victimShelterName = d.mode === 'rescued' && d.destinationType === 'shelter' && primaryTotal > 0
+      ? selectedShelter?.name ?? null
+      : null;
+    const victimNotes = d.mode === 'rescued'
+      ? `ปลายทางปัจจุบัน: ${destinationParts.join(' · ')}`
+      : d.notes.trim() || 'ยังไม่สามารถเข้าถึงพื้นที่ได้';
 
     setOutcomeSaving(true);
     try {
@@ -620,12 +702,13 @@ export default function OfficerDashboard() {
         p_notes: d.notes || null,
         p_people: peoplePayload,
         p_count_discrepancy_note: d.mode === 'rescued' ? discrepancyNote : null,
+        p_victim_status: victimStatus,
+        p_victim_shelter_name: victimShelterName,
+        p_victim_notes: victimNotes,
       };
-      let { error: rpcErr } = await supabase.rpc('confirm_rescue_outcome_v3', rpcArgs);
-      const missingV3 = rpcErr?.code === 'PGRST202'
-        || rpcErr?.message?.includes('confirm_rescue_outcome_v3');
-      if (missingV3) {
-        ({ error: rpcErr } = await supabase.rpc('confirm_rescue_outcome_v2', rpcArgs));
+      const { error: rpcErr } = await supabase.rpc('confirm_rescue_outcome_v4', rpcArgs);
+      if (rpcErr?.code === 'PGRST202' || rpcErr?.message?.includes('confirm_rescue_outcome_v4')) {
+        throw new Error('ยังไม่ได้ติดตั้งระบบบันทึกผลแบบปลอดภัย กรุณารัน migration 202609050005 ก่อนใช้งาน');
       }
       if (rpcErr) throw rpcErr;
 
@@ -674,7 +757,7 @@ export default function OfficerDashboard() {
       // อัปเดต UI local state ให้ตรงกับ DB ทันที
       const newSOSStatus = d.mode === 'rescued' ? 'rescued' : 'cannot_reach';
       setReports(prev => prev.map(r => r.id === d.reportId ? { ...r, status: newSOSStatus as SOSReport['status'] } : r));
-      setJobStage(prev => { const next = { ...prev }; delete next[d.reportId]; return next; });
+      setActiveAssignments(prev => { const next = { ...prev }; delete next[d.reportId]; return next; });
       if (navigatingId === d.reportId) setNavigatingId(null);
       setOutcomeDraft(null);
 
@@ -757,7 +840,7 @@ export default function OfficerDashboard() {
         .rescue-app > header { background:rgba(255,254,252,.82) !important; backdrop-filter:blur(18px); border-bottom:1px solid rgba(38,70,83,.08) !important; padding:15px 28px !important; }.rescue-app > header > div{max-width:1440px !important}.rescue-app > header button{border-color:rgba(38,70,83,.12) !important;color:#264653 !important;border-radius:12px !important;transition:background .2s ease,transform .2s ease !important}.rescue-app > header button:hover{background:#fff7ed !important;transform:translateY(-1px)}
         .rescue-app main { max-width:1440px !important; padding:28px !important; position:relative; z-index:1; }.legacy-summary{display:none !important}
         .dashboard-overview { display:grid; grid-template-columns:minmax(0,1.55fr) minmax(300px,.75fr); gap:18px; margin-bottom:18px; animation:rise-in .45s ease both; }.operation-hero{min-height:206px;overflow:hidden;position:relative;border-radius:26px;padding:28px;color:#fff;background:linear-gradient(125deg,#264653,#31677a);box-shadow:0 18px 42px rgba(38,70,83,.18)}.operation-hero::after{content:"";position:absolute;width:230px;height:230px;right:-72px;bottom:-102px;border:32px solid rgba(233,196,106,.38);border-radius:50%}.operation-kicker{display:flex;gap:8px;align-items:center;color:#E9C46A;font-size:12px;font-weight:800;letter-spacing:.08em}.operation-kicker i{width:8px;height:8px;border-radius:50%;background:#E9C46A;box-shadow:0 0 0 5px rgba(233,196,106,.14)}.operation-hero h1{font-size:clamp(23px,3vw,32px);letter-spacing:-.035em;line-height:1.22;margin:18px 0 7px;position:relative;z-index:1}.operation-hero p{color:rgba(255,255,255,.76);font-size:14px;position:relative;z-index:1}.operation-summary{display:flex;position:relative;z-index:1;gap:18px;margin-top:24px}.operation-summary span{display:grid;gap:2px;font-size:12px;color:rgba(255,255,255,.65)}.operation-summary b{color:#fff;font-size:20px;line-height:1}
-        .metric-stack{display:grid;grid-template-columns:1fr 1fr;gap:12px}.metric-card{background:#FFFEFC;min-height:97px;padding:18px;border:1px solid rgba(38,70,83,.08);border-radius:22px;box-shadow:0 10px 24px rgba(38,70,83,.06);transition:transform .2s ease,box-shadow .2s ease}.metric-card:hover{transform:translateY(-3px);box-shadow:0 16px 28px rgba(38,70,83,.1)}.metric-card:nth-child(1){background:#fff8e7}.metric-card:nth-child(2){background:#ecf9f7}.metric-card:nth-child(3){background:#fff0ec}.metric-card:nth-child(4){background:#f5f8f9}.metric-label{font-size:12px;color:#6B7C84;font-weight:600}.metric-value{margin-top:6px;font-size:27px;line-height:1;font-weight:800;color:#264653}
+        .metric-stack{display:grid;grid-template-columns:1fr 1fr;gap:12px}.metric-card{width:100%;background:#FFFEFC;min-height:97px;padding:18px;border:1px solid rgba(38,70,83,.08);border-radius:22px;box-shadow:0 10px 24px rgba(38,70,83,.06);font:inherit;text-align:left;cursor:pointer;transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease}.metric-card:hover{transform:translateY(-3px);border-color:#B8CEE4;box-shadow:0 16px 28px rgba(38,70,83,.1)}.metric-card:focus-visible{outline:3px solid rgba(4,102,200,.28);outline-offset:3px}.metric-card:nth-child(1){background:#fff8e7}.metric-card:nth-child(2){background:#ecf9f7}.metric-card:nth-child(3){background:#fff0ec}.metric-card:nth-child(4){background:#f5f8f9}.metric-label{font-size:12px;color:#6B7C84;font-weight:600}.metric-value{margin-top:6px;font-size:27px;line-height:1;font-weight:800;color:#264653}.metric-hint{display:block;margin-top:8px;color:var(--blue);font-size:11px;font-weight:700}
         .filter-bar{background:rgba(255,254,252,.9) !important;border:1px solid rgba(38,70,83,.08) !important;border-radius:22px !important;padding:12px !important;margin-bottom:18px !important;box-shadow:0 9px 22px rgba(38,70,83,.05)}.filter-label{margin:0 6px 0 4px;color:#264653;font-size:13px;font-weight:800}.filter-button{background:#edf4f4 !important;color:#6B7C84 !important;border:1px solid transparent !important;border-radius:12px !important;padding:8px 13px !important;transition:all .2s ease !important}.filter-button:hover{background:#d8efeb !important;color:#2A9D8F !important;transform:translateY(-1px)}.filter-button.selected{background:#2A9D8F !important;color:#fff !important;box-shadow:0 5px 12px rgba(42,157,143,.2)}.district-filter{border-color:rgba(38,70,83,.1) !important;background:#fff !important;color:#264653;border-radius:12px !important;padding:8px 11px !important}
         .report-grid{gap:16px !important}.rescue-card{border:1px solid rgba(38,70,83,.09) !important;background:#FFFEFC !important;border-radius:22px !important;padding:18px !important;box-shadow:0 9px 24px rgba(38,70,83,.055) !important;transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease !important;animation:rise-in .45s ease both}.rescue-card:hover{transform:translateY(-4px);border-color:rgba(42,157,143,.36) !important;box-shadow:0 18px 32px rgba(38,70,83,.11) !important}.rescue-card > div:nth-child(3){background:#f3f8f8 !important;border-color:#e1eeee !important;border-radius:14px !important}.rescue-card button{transition:transform .18s ease,filter .18s ease,box-shadow .18s ease !important}.rescue-card button:hover:not(:disabled){transform:translateY(-1px);filter:saturate(1.06);box-shadow:0 6px 14px rgba(38,70,83,.12)}.rescue-card button:active:not(:disabled){transform:scale(.98)}.rescue-card button[style*="EF4444"]{background:#E76F51 !important}.rescue-card button[style*="1D4ED8"]{background:#2A9D8F !important}.outcome-backdrop{background:rgba(38,70,83,.54) !important;backdrop-filter:blur(5px)}.outcome-sheet{border:1px solid rgba(38,70,83,.08);box-shadow:0 -12px 42px rgba(38,70,83,.17)}
         /* Blue minimal operations workspace */
@@ -769,7 +852,7 @@ export default function OfficerDashboard() {
         .operation-hero{background:linear-gradient(125deg,var(--navy),var(--blue-deep));box-shadow:0 18px 42px rgba(0,24,69,.17)}.operation-hero::after{border-color:rgba(4,102,200,.35)}.operation-kicker{color:#A9CDEC}.operation-kicker i{background:#70AEE7;box-shadow:0 0 0 5px rgba(4,102,200,.18)}
         .metric-card{border-color:rgba(51,65,92,.1);background:#fff!important;box-shadow:0 9px 25px rgba(0,24,69,.05)}.metric-card:nth-child(1){background:#EAF3FC!important}.metric-card:nth-child(2){background:#EEF2F7!important}.metric-value{color:var(--ink)}
         .filter-bar{border-color:rgba(51,65,92,.1)!important;background:rgba(255,255,255,.9)!important}.filter-label{color:var(--ink)}.filter-button{min-height:40px;background:#EEF2F7!important;color:var(--slate)!important}.filter-button:hover{color:var(--blue)!important;background:#EAF3FC!important}.filter-button.selected{color:#fff!important;background:var(--blue)!important;box-shadow:0 5px 13px rgba(4,102,200,.2)}.district-filter{min-height:40px;color:var(--slate)!important;border-color:var(--line)!important}
-        .mission-list{display:grid;gap:9px}.mission-row{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 112px;gap:8px;overflow:hidden;border:1px solid rgba(51,65,92,.11);border-radius:17px;background:rgba(255,255,255,.92);box-shadow:0 7px 20px rgba(0,24,69,.04);transition:.2s}.mission-row::before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:var(--muted)}.mission-row.urgency-critical::before{background:var(--midnight)}.mission-row.urgency-high::before{background:var(--blue-strong)}.mission-row.urgency-medium::before{background:var(--slate)}.mission-row:hover{transform:translateY(-2px);border-color:#BED0E2;box-shadow:0 12px 27px rgba(0,24,69,.08)}
+        .mission-list{display:grid;gap:9px}.mission-row{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 112px;gap:8px;overflow:hidden;border:1px solid rgba(51,65,92,.11);border-radius:17px;background:rgba(255,255,255,.92);box-shadow:0 7px 20px rgba(0,24,69,.04);transition:.2s}.mission-row::before{content:"";position:absolute;inset:0 auto 0 0;width:5px;background:var(--muted)}.mission-row.urgency-critical::before{background:#B42318}.mission-row.urgency-high::before{background:#D92D20}.mission-row.urgency-medium::before{background:#F79009}.mission-row.urgency-low::before{background:#EAAA08}.mission-row:hover{transform:translateY(-2px);border-color:#BED0E2;box-shadow:0 12px 27px rgba(0,24,69,.08)}
         .mission-open{min-width:0;display:flex;align-items:center;padding:17px 12px 17px 20px;border:0;color:var(--ink);background:transparent;font:inherit;text-align:left;cursor:pointer}.mission-name{min-width:0}.mission-name strong{display:block;overflow:hidden;font-size:16px;text-overflow:ellipsis;white-space:nowrap}.mission-map{margin:8px;display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid #B8CEE4;border-radius:12px;color:var(--blue-strong);background:#F2F7FC;font:700 13px/1 inherit;cursor:pointer}.mission-map:hover{color:#fff;background:var(--blue)}.mission-map:disabled{color:var(--pale);border-color:var(--line);background:#F1F3F6;cursor:not-allowed}.mission-empty{padding:60px 20px;text-align:center;color:var(--muted);font-size:15px}
         .mission-modal-backdrop{--blue:#0466C8;--blue-strong:#0353A4;--blue-deep:#023E7D;--navy:#002855;--ink:#001845;--midnight:#001233;--slate:#33415C;--muted:#7D8597;--line:#DDE3EC;position:fixed;inset:0;z-index:110;display:grid;place-items:center;padding:20px;background:rgba(0,18,51,.58);backdrop-filter:blur(7px)}.mission-modal{position:relative;width:min(100%,620px);max-height:min(88vh,760px);overflow:auto;border:1px solid rgba(255,255,255,.13);border-radius:25px;background:#fff;box-shadow:0 28px 80px rgba(0,18,51,.28);animation:rise-in .25s ease}.mission-modal-close{position:absolute;z-index:3;right:14px;top:14px;width:38px;height:38px;border:1px solid rgba(255,255,255,.25);border-radius:12px;color:#fff;background:rgba(255,255,255,.12);font:500 24px/1 inherit;cursor:pointer}.mission-modal-hero{padding:27px 64px 24px 25px;color:#fff;background:linear-gradient(135deg,#002855,#023E7D)}.mission-modal-kicker{color:#A9CDEC;font-size:12px;font-weight:750;letter-spacing:.08em}.mission-modal h2{margin:7px 0 3px;color:#fff!important;font-size:25px}.mission-modal-hero p{color:rgba(255,255,255,.72);font-size:14px}.mission-modal-body{display:grid;gap:13px;padding:21px}.mission-modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.mission-modal-grid>div{padding:12px;border:1px solid var(--line);border-radius:12px;background:#F8FAFD}.mission-modal-grid .wide{grid-column:1/-1}.mission-modal-grid .important{border-left:3px solid var(--blue);background:#EAF3FC}.mission-modal-grid span,.mission-modal-grid strong,.mission-modal-grid small{display:block}.mission-modal-grid span{color:var(--muted);font-size:13px}.mission-modal-grid strong{margin-top:3px;color:var(--slate);font-size:15px;line-height:1.5}.mission-modal-grid small{margin-top:2px;color:var(--muted);font-size:13px}.mission-modal-map,.mission-modal-primary{min-height:48px;border-radius:12px;font:750 14px/1 inherit;cursor:pointer}.mission-modal-map{border:1px solid #B8CEE4;color:var(--blue);background:#F1F6FC}.mission-modal-primary{border:0;color:#fff;background:linear-gradient(135deg,var(--blue),var(--blue-strong));box-shadow:0 7px 17px rgba(4,102,200,.17)}.mission-modal-primary.dark{background:var(--midnight)}.mission-modal-actions{display:grid;gap:9px}.mission-stage{padding:11px;border-radius:11px;color:var(--blue-deep);background:#EAF3FC;text-align:center;font-size:14px;font-weight:700}.mission-stage-buttons{display:grid;grid-template-columns:1fr;gap:8px}.mission-stage-buttons button{min-height:46px;border:1px solid var(--line);border-radius:11px;color:var(--slate);background:#F5F8FC;font:700 14px/1 inherit;cursor:pointer}.mission-stage-complete{display:grid;place-items:center;min-height:44px;border-radius:11px;color:#0353A4;background:#EAF3FC;font-size:14px;font-weight:750}
         .outcome-backdrop{align-items:center!important;padding:20px}.outcome-sheet{border-radius:22px!important;max-width:540px!important;max-height:88vh!important;box-shadow:0 25px 70px rgba(0,18,51,.3)!important}.outcome-sheet input,.outcome-sheet select,.outcome-sheet textarea,.outcome-sheet button{font-size:14px!important}.outcome-sheet [style*="font-size: 10"],.outcome-sheet [style*="font-size: 11"],.outcome-sheet [style*="font-size: 12"]{font-size:13px!important}
@@ -808,9 +891,10 @@ export default function OfficerDashboard() {
             แสดงเฉพาะเมื่อกดรับงานแล้ว และงานนั้นยังไม่เสร็จ          */}
         {navigatingId && (() => {
           const job = reports.find(r => r.id === navigatingId);
-          if (!job || !job.lat || !job.lng) return null;
+          const jobCoordinates = job ? getCoordinates(job.lat, job.lng) : null;
+          if (!job || !jobCoordinates) return null;
           const dist = myCoords
-            ? calcDistance(myCoords.lat, myCoords.lng, job.lat, job.lng)
+            ? calcDistance(myCoords.lat, myCoords.lng, jobCoordinates.lat, jobCoordinates.lng)
             : null;
           const locationLabel = `${job.sub_district} ${job.district} ${job.province}`;
           return (
@@ -837,7 +921,7 @@ export default function OfficerDashboard() {
 
               {/* ปุ่มนำทาง — เปิด Google Maps / Apple Maps ตาม platform */}
               <button
-                onClick={() => openNavigation(job.lat!, job.lng!, locationLabel)}
+                onClick={() => openNavigation(jobCoordinates.lat, jobCoordinates.lng, locationLabel)}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 8,
                   background: '#fff', color: '#EF4444',
@@ -884,15 +968,16 @@ export default function OfficerDashboard() {
             </div>
             <div className="metric-stack">
               {[
-                { label: 'รอรับเรื่อง', count: reports.filter(r => r.status === 'pending').length },
-                { label: 'กำลังช่วยเหลือ', count: reports.filter(r => r.status === 'assigned').length },
-                { label: 'ช่วยเหลือสำเร็จ', count: reports.filter(r => r.status === 'rescued').length },
-                { label: 'ผู้ประสบภัยทั้งหมด', count: reports.reduce((total, report) => total + (report.adult_count ?? 0) + (report.child_count ?? 0) + (report.elder_count ?? 0), 0) },
-              ].map(({ label, count }) => (
-                <div className="metric-card" key={label}>
+                { label: 'รอรับเรื่อง', count: reports.filter(r => r.status === 'pending').length, status: 'pending' },
+                { label: 'กำลังช่วยเหลือ', count: reports.filter(r => r.status === 'assigned').length, status: 'assigned' },
+                { label: 'ช่วยเหลือสำเร็จ', count: reports.filter(r => r.status === 'rescued').length, status: 'rescued' },
+                { label: 'ผู้ประสบภัยทั้งหมด', count: reports.reduce((total, report) => total + (report.adult_count ?? 0) + (report.child_count ?? 0) + (report.elder_count ?? 0), 0), status: 'all' },
+              ].map(({ label, count, status }) => (
+                <button className="metric-card" type="button" key={label} onClick={() => openMetricDetails(status)} aria-label={`ดูรายละเอียด ${label}`}>
                   <div className="metric-label">{label}</div>
                   <div className="metric-value">{count}</div>
-                </div>
+                  <span className="metric-hint">ดูรายการ →</span>
+                </button>
               ))}
             </div>
           </section>
@@ -913,7 +998,7 @@ export default function OfficerDashboard() {
           </div>
 
           {/* Filters */}
-          <div className="filter-bar" style={{ background: '#fff', borderRadius: 16, padding: '14px 16px', marginBottom: 16, border: '1px solid #ECEEF5', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <div id="mission-queue" className="filter-bar" style={{ background: '#fff', borderRadius: 16, padding: '14px 16px', marginBottom: 16, border: '1px solid #ECEEF5', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span className="filter-label">จัดลำดับภารกิจ</span>
             {['active', 'pending', 'assigned', 'rescued', 'cannot_reach', 'all'].map(s => (
               <button className={`filter-button ${filterStatus === s ? 'selected' : ''}`} key={s} onClick={() => setFilterStatus(s)}
@@ -941,9 +1026,10 @@ export default function OfficerDashboard() {
             <div className="mission-list" aria-label="รายการคำขอเรียงตามความรุนแรง">
               {filtered.map((item) => {
                 const locationLabel = `${item.sub_district} ${item.district} ${item.province}`;
+                const coordinates = getCoordinates(item.lat, item.lng);
                 return (
                   <article className={`mission-row urgency-${item.urgency_level}`} key={item.id}>
-                    <button className="mission-open" type="button" onClick={() => setSelectedReportId(item.id)}>
+                    <button className="mission-open" type="button" onClick={() => setSelectedReportId(item.id)} aria-label={`ดูรายละเอียด ${item.full_name} ระดับความรุนแรง ${URGENCY_LABEL[item.urgency_level]}`}>
                       <span className="mission-name">
                         <strong>{item.full_name}</strong>
                       </span>
@@ -951,8 +1037,8 @@ export default function OfficerDashboard() {
                     <button
                       className="mission-map"
                       type="button"
-                      disabled={!item.lat || !item.lng}
-                      onClick={() => item.lat && item.lng && openNavigation(item.lat, item.lng, locationLabel)}
+                      disabled={!coordinates}
+                      onClick={() => coordinates && openNavigation(coordinates.lat, coordinates.lng, locationLabel)}
                       aria-label={`เปิดแผนที่ของ ${item.full_name}`}
                     >
                       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -974,7 +1060,10 @@ export default function OfficerDashboard() {
         const item = selectedReport;
         const isLoading = actionLoading === item.id;
         const locationLabel = `${item.sub_district} ${item.district} ${item.province}`;
-        const stage = jobStage[item.id];
+        const coordinates = getCoordinates(item.lat, item.lng);
+        const activeAssignment = activeAssignments[item.id];
+        const stage = activeAssignment?.status;
+        const isMyAssignment = activeAssignment?.rescuerId === profile?.id;
         const totalPeople = (item.adult_count ?? 0) + (item.child_count ?? 0) + (item.elder_count ?? 0);
 
         return (
@@ -998,8 +1087,8 @@ export default function OfficerDashboard() {
                   {item.special_needs && <div className="wide important"><span>หมายเหตุสำคัญ</span><strong>{item.special_needs}</strong></div>}
                 </div>
 
-                {item.lat && item.lng && (
-                  <button className="mission-modal-map" type="button" onClick={() => openNavigation(item.lat!, item.lng!, locationLabel)}>
+                {coordinates && (
+                  <button className="mission-modal-map" type="button" onClick={() => openNavigation(coordinates.lat, coordinates.lng, locationLabel)}>
                     เปิด Google Maps นำทาง
                   </button>
                 )}
@@ -1010,7 +1099,7 @@ export default function OfficerDashboard() {
                   </button>
                 )}
 
-                {item.status === 'assigned' && (
+                {item.status === 'assigned' && isMyAssignment && (
                   <div className="mission-modal-actions">
                     <div className="mission-stage">{stage === 'on_scene' ? 'ถึงจุดเกิดเหตุและกำลังช่วยเหลือ' : stage === 'en_route' ? 'อยู่ระหว่างเดินทางไปจุดเกิดเหตุ' : 'รับงานแล้ว กรุณาเริ่มเดินทาง'}</div>
                     <div className="mission-stage-buttons">
@@ -1024,6 +1113,10 @@ export default function OfficerDashboard() {
                     </div>
                     <button className="mission-modal-primary dark" type="button" onClick={() => { setSelectedReportId(null); openOutcomeModal(item); }} disabled={isLoading}>ยืนยันผลการช่วยเหลือ</button>
                   </div>
+                )}
+
+                {item.status === 'assigned' && !isMyAssignment && (
+                  <div className="mission-stage">ภารกิจนี้อยู่ระหว่างดำเนินการโดยทีมกู้ภัยอื่น</div>
                 )}
 
                 {item.status === 'cannot_reach' && (
