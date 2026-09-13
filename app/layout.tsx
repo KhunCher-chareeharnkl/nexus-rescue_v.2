@@ -1,4 +1,5 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import { PwaRegister } from "@/components/pwa-register";
 import { Geist, Geist_Mono, IBM_Plex_Sans_Thai } from "next/font/google";
 import { PROJECT_NAME } from "@/lib/brand";
 import "./globals.css";
@@ -28,6 +29,12 @@ export const metadata: Metadata = {
   description: PROJECT_NAME,
 };
 
+export const viewport: Viewport = {
+  themeColor: "#002855",
+  colorScheme: "light",
+  viewportFit: "cover",
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -38,7 +45,10 @@ export default function RootLayout({
       lang="th"
       className={`${geistSans.variable} ${geistMono.variable} ${thaiSans.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {children}
+        <PwaRegister />
+      </body>
     </html>
   );
 }
