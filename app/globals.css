@@ -3,6 +3,9 @@
 :root {
   --background: #f9fbfe;
   --foreground: #171717;
+  --font-thai: "Noto Sans Thai", "Leelawadee UI", Tahoma, Arial, sans-serif;
+  --font-geist-sans: "Segoe UI", Arial, sans-serif;
+  --font-geist-mono: "Cascadia Mono", Consolas, monospace;
 }
 
 @theme inline {
