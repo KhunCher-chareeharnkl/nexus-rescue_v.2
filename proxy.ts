@@ -19,9 +19,8 @@ export async function proxy(request: NextRequest) {
   const hasActiveOfficerSession = request.cookies.has(OFFICER_SESSION_COOKIE);
   const authCode = request.nextUrl.searchParams.get('code');
 
-  // Keep the already allow-listed dashboard URL as the Magic Link target.
-  // Supabase appends the PKCE code there, then proxy forwards it to the
-  // server callback where the code is exchanged and the cookies are created.
+  // รองรับ Magic Link รุ่นเดิมที่ชี้มาหน้า dashboard โดยพาไปแลก PKCE code
+  // ที่ server callback ก่อนสร้างคุกกี้ session. ลิงก์ใหม่ชี้ callback โดยตรง.
   if (authCode) {
     const callbackUrl = new URL('/auth/callback', request.url);
     callbackUrl.searchParams.set('code', authCode);

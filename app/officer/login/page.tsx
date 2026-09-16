@@ -66,6 +66,12 @@ export default function OfficerLogin() {
     return url.replace(/\/+$/, '');
   };
 
+  const getMagicLinkCallbackUrl = () => {
+    const callbackUrl = new URL('/auth/callback', getRedirectUrl());
+    callbackUrl.searchParams.set('next', '/officer/dashboard');
+    return callbackUrl.toString();
+  };
+
   useEffect(() => {
     if (role !== 'shelter_staff') return;
     let cancelled = false;
@@ -132,7 +138,7 @@ export default function OfficerLogin() {
 
     const { error: otpError } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: `${getRedirectUrl()}/officer/dashboard` },
+      options: { emailRedirectTo: getMagicLinkCallbackUrl() },
     });
 
     setLoading(false);

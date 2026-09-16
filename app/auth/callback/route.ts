@@ -23,5 +23,7 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.redirect(`${origin}/officer/login?error=auth_failed`);
+  const loginUrl = new URL('/officer/login', origin);
+  loginUrl.searchParams.set('error', 'auth_failed');
+  return NextResponse.redirect(loginUrl);
 }
