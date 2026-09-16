@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -16,8 +16,15 @@ import {
   Waves,
   X,
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
 import { saveSosSession } from '@/lib/session';
+import {
+  getPendingSosCount,
+  isNetworkError,
+  queueSosRequest,
+  submitSosRequest,
+  syncPendingSosRequests,
+  type SosRequestPayload,
+} from '@/lib/offline-sos-queue';
 import thaiAddressData from '@riz007/thai-address-data';
 
 const AVAILABLE_ITEMS = [
@@ -30,6 +37,31 @@ const AVAILABLE_ITEMS = [
 ];
 
 const MAX_PEOPLE_PER_GROUP = 99;
+const SOS_DRAFT_KEY = 'nexus_sos_draft_v1';
+
+type SosDraft = {
+  sosRequestId: string;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  province: string;
+  district: string;
+  subDistrict: string;
+  houseNumber: string;
+  villageNumber: string;
+  soi: string;
+  road: string;
+  landmark: string;
+  lat: number | null;
+  lng: number | null;
+  waterLevel: number;
+  adultCount: number;
+  childCount: number;
+  elderCount: number;
+  specialNeeds: string;
+  neededItems: string[];
+  customItem: string;
+};
 
 function createSosRequestId() {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
@@ -90,7 +122,7 @@ function calculateUrgency({
 export default function SosRequestForm({ onSubmitted }: { onSubmitted: (phone: string) => void }) {
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
-  const [sosRequestId] = useState(createSosRequestId);
+  const [sosRequestId, setSosRequestId] = useState(createSosRequestId);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
@@ -115,6 +147,10 @@ export default function SosRequestForm({ onSubmitted }: { onSubmitted: (phone: s
   const [specialNeeds, setSpecialNeeds] = useState('');
   const [neededItems, setNeededItems] = useState<string[]>([]);
   const [customItem, setCustomItem] = useState('');
+  const [isOnline, setIsOnline] = useState(true);
+  const [pendingSosCount, setPendingSosCount] = useState(0);
+  const [queueNotice, setQueueNotice] = useState('');
+  const [draftReady, setDraftReady] = useState(false);
   const hasGpsCoordinates = lat !== null && lng !== null;
   const hasAddressDetails = [houseNumber, villageNumber, soi, road, landmark].some((value) => value.trim().length > 0);
   const hasLocationDetails = hasGpsCoordinates || hasAddressDetails;
@@ -122,6 +158,63 @@ export default function SosRequestForm({ onSubmitted }: { onSubmitted: (phone: s
   const districts = useMemo(() => unique(thaiAddressData.filter((item) => item.province === province).map((item) => item.district)), [province]);
   const subDistrictRows = useMemo(() => thaiAddressData.filter((item) => item.province === province && item.district === district), [province, district]);
   const subDistricts = useMemo(() => unique(subDistrictRows.map((item) => item.subdistrict)), [subDistrictRows]);
+
+  useEffect(() => {
+    const refreshNetworkState = () => setIsOnline(navigator.onLine);
+    const refreshQueueCount = () => setPendingSosCount(getPendingSosCount());
+    const onSosSent = (event: Event) => {
+      const detail = (event as CustomEvent<{ phone?: string }>).detail;
+      if (detail?.phone && detail.phone === phone) {
+        clearSosDraft();
+        onSubmitted(detail.phone);
+      }
+    };
+
+    const hydrate = window.setTimeout(() => {
+      try {
+        const savedDraft = JSON.parse(window.localStorage.getItem(SOS_DRAFT_KEY) ?? 'null') as SosDraft | null;
+        if (savedDraft) {
+          setSosRequestId(savedDraft.sosRequestId || createSosRequestId());
+          setFirstName(savedDraft.firstName ?? ''); setLastName(savedDraft.lastName ?? ''); setPhone(savedDraft.phone ?? '');
+          setProvince(savedDraft.province ?? ''); setDistrict(savedDraft.district ?? ''); setSubDistrict(savedDraft.subDistrict ?? '');
+          setHouseNumber(savedDraft.houseNumber ?? ''); setVillageNumber(savedDraft.villageNumber ?? ''); setSoi(savedDraft.soi ?? '');
+          setRoad(savedDraft.road ?? ''); setLandmark(savedDraft.landmark ?? ''); setLat(savedDraft.lat ?? null); setLng(savedDraft.lng ?? null);
+          setWaterLevel(savedDraft.waterLevel ?? 1); setAdultCount(savedDraft.adultCount ?? 1); setChildCount(savedDraft.childCount ?? 0);
+          setElderCount(savedDraft.elderCount ?? 0); setSpecialNeeds(savedDraft.specialNeeds ?? ''); setNeededItems(savedDraft.neededItems ?? []);
+          setCustomItem(savedDraft.customItem ?? '');
+        }
+      } catch {
+        window.localStorage.removeItem(SOS_DRAFT_KEY);
+      }
+      refreshNetworkState(); refreshQueueCount(); setDraftReady(true);
+    }, 0);
+
+    window.addEventListener('online', refreshNetworkState);
+    window.addEventListener('offline', refreshNetworkState);
+    window.addEventListener('nexus:sos-queue-changed', refreshQueueCount);
+    window.addEventListener('nexus:sos-sent', onSosSent);
+    return () => {
+      window.clearTimeout(hydrate);
+      window.removeEventListener('online', refreshNetworkState);
+      window.removeEventListener('offline', refreshNetworkState);
+      window.removeEventListener('nexus:sos-queue-changed', refreshQueueCount);
+      window.removeEventListener('nexus:sos-sent', onSosSent);
+    };
+  }, [onSubmitted, phone]);
+
+  useEffect(() => {
+    if (!draftReady) return;
+    const draft: SosDraft = {
+      sosRequestId, firstName, lastName, phone, province, district, subDistrict, houseNumber, villageNumber, soi, road,
+      landmark, lat, lng, waterLevel, adultCount, childCount, elderCount, specialNeeds, neededItems, customItem,
+    };
+    const hasDraftData = Boolean(
+      firstName || lastName || phone || province || district || subDistrict || houseNumber || villageNumber || soi || road
+      || landmark || lat !== null || lng !== null || neededItems.length || specialNeeds || customItem,
+    );
+    if (hasDraftData) window.localStorage.setItem(SOS_DRAFT_KEY, JSON.stringify(draft));
+    else clearSosDraft();
+  }, [adultCount, childCount, customItem, district, draftReady, elderCount, firstName, houseNumber, landmark, lastName, lat, lng, neededItems, phone, province, road, soi, sosRequestId, specialNeeds, subDistrict, villageNumber, waterLevel]);
 
   const handlePhoneChange = (value: string) => {
     const digits = value.replace(/\D/g, '').slice(0, 10);
@@ -257,7 +350,7 @@ export default function SosRequestForm({ onSubmitted }: { onSubmitted: (phone: s
         neededItems,
       });
 
-      const payload = {
+      const payload: SosRequestPayload = {
         client_request_id: sosRequestId,
         full_name: `${firstName.trim()} ${lastName.trim()}`,
         phone,
@@ -277,27 +370,37 @@ export default function SosRequestForm({ onSubmitted }: { onSubmitted: (phone: s
         status: 'pending',
       };
 
-      const { data, error } = await supabase
-        .from('sos_reports')
-        .insert([payload])
-        .select('id')
-        .single();
-
-      if (error?.code === '23505') {
-        const { data: existingRequest, error: existingRequestError } = await supabase
-          .from('sos_reports')
-          .select('id')
-          .eq('client_request_id', sosRequestId)
-          .maybeSingle();
-        if (existingRequestError || !existingRequest) throw error;
-        saveSosSession(existingRequest.id, phone);
-        onSubmitted(phone);
+      if (!navigator.onLine) {
+        queueSosRequest(payload);
+        setPendingSosCount(getPendingSosCount());
+        setQueueNotice('บันทึกคำขอไว้ในเครื่องแล้ว ระบบจะส่งถึงเจ้าหน้าที่ทันทีเมื่อเชื่อมต่ออินเทอร์เน็ตได้');
         return;
       }
-      if (error) throw error;
-      saveSosSession(data.id, phone);
+
+      const id = await submitSosRequest(payload);
+      clearSosDraft();
+      saveSosSession(id, phone);
       onSubmitted(phone);
     } catch (error) {
+      if (isNetworkError(error)) {
+        const addressDetails = [
+          houseNumber.trim() && `บ้านเลขที่ ${houseNumber.trim()}`,
+          villageNumber.trim() && `หมู่ ${villageNumber.trim()}`,
+          soi.trim() && `ซอย ${soi.trim()}`,
+          road.trim() && `ถนน ${road.trim()}`,
+          landmark.trim() && `จุดสังเกต: ${landmark.trim()}`,
+        ].filter(Boolean).join(' · ');
+        queueSosRequest({
+          client_request_id: sosRequestId, full_name: `${firstName.trim()} ${lastName.trim()}`, phone, province, district,
+          sub_district: subDistrict, address_details: addressDetails || null, lat, lng, adult_count: adultCount,
+          child_count: childCount, elder_count: elderCount,
+          urgency_level: calculateUrgency({ waterLevel, adultCount, childCount, elderCount, specialNeeds, neededItems }),
+          water_level: waterLevel, special_needs: specialNeeds.trim() || null, needed_items: neededItems, status: 'pending',
+        });
+        setPendingSosCount(getPendingSosCount());
+        setQueueNotice('เชื่อมต่อเครือข่ายไม่ได้ จึงบันทึกคำขอไว้ในเครื่องและจะส่งอัตโนมัติเมื่อกลับมาออนไลน์');
+        return;
+      }
       const message = error instanceof Error ? error.message : 'ไม่สามารถส่งข้อมูลได้';
       alert(`ส่งข้อมูลไม่สำเร็จ: ${message}`);
     } finally {
@@ -307,6 +410,14 @@ export default function SosRequestForm({ onSubmitted }: { onSubmitted: (phone: s
 
   return (
     <form className="sos-form" onSubmit={handleSubmit}>
+      {(!isOnline || pendingSosCount > 0 || queueNotice) && <div className="sos-offline-notice" role="status">
+        <Send size={18} />
+        <span>
+          <strong>{!isOnline ? 'กำลังใช้งานแบบออฟไลน์' : pendingSosCount > 0 ? `มีคำขอ SOS รอส่ง ${pendingSosCount} รายการ` : 'คำขอถูกเก็บไว้ในเครื่องแล้ว'}</strong>
+          <small>{queueNotice || (!isOnline ? 'กรอกข้อมูลต่อได้ เมื่อกดส่งระบบจะเก็บไว้และส่งเมื่ออินเทอร์เน็ตกลับมา' : 'ระบบกำลังส่งคำขอที่ค้างอยู่')}</small>
+        </span>
+        {isOnline && pendingSosCount > 0 && <button type="button" onClick={() => void syncPendingSosRequests().then(() => setPendingSosCount(getPendingSosCount()))}>ลองส่งตอนนี้</button>}
+      </div>}
       <div className="sos-stepper" aria-label={`ขั้นตอนที่ ${step} จาก 3`}>
         <div className="sos-stepper-line"><span style={{ width: `${((step - 1) / 2) * 100}%` }} /></div>
         {STEP_META.map(({ number, label, icon: Icon }) => (
@@ -375,11 +486,15 @@ export default function SosRequestForm({ onSubmitted }: { onSubmitted: (phone: s
           {neededItems.some((item) => !AVAILABLE_ITEMS.includes(item)) && <div className="sos-custom-chips">{neededItems.filter((item) => !AVAILABLE_ITEMS.includes(item)).map((item) => <span key={item}>{item}<button type="button" onClick={() => toggleItem(item)} aria-label={`ลบ ${item}`}><X size={12} /></button></span>)}</div>}
           <Field label="ความต้องการพิเศษหรือหมายเหตุ"><textarea rows={3} value={specialNeeds} onChange={(event) => setSpecialNeeds(event.target.value)} placeholder="เช่น มีผู้ป่วยติดเตียง ผู้พิการ หญิงตั้งครรภ์ หรือยาที่จำเป็น" /></Field>
           <div className="sos-submit-note"><Send size={17} /><span><strong>ระบบจะประเมินความเร่งด่วนให้อัตโนมัติ</strong><small>ประเมินจากระดับน้ำ จำนวนผู้ประสบภัย กลุ่มเปราะบาง และความต้องการพิเศษ</small></span></div>
-          <div className="sos-button-row"><button className="sos-secondary-button" type="button" onClick={() => setStep(2)}><ArrowLeft size={15} /> ย้อนกลับ</button><button className="sos-primary-button" type="submit" disabled={submitting || totalPeople < 1}>{submitting ? 'กำลังส่งข้อมูล...' : 'ส่งคำขอความช่วยเหลือ'} <Send size={15} /></button></div>
+          <div className="sos-button-row"><button className="sos-secondary-button" type="button" onClick={() => setStep(2)}><ArrowLeft size={15} /> ย้อนกลับ</button><button className="sos-primary-button" type="submit" disabled={submitting || totalPeople < 1}>{submitting ? 'กำลังส่งข้อมูล...' : isOnline ? 'ส่งคำขอความช่วยเหลือ' : 'บันทึกและรอส่ง'} <Send size={15} /></button></div>
         </section>
       )}
     </form>
   );
+}
+
+function clearSosDraft() {
+  if (typeof window !== 'undefined') window.localStorage.removeItem(SOS_DRAFT_KEY);
 }
 
 function PanelHeading({ number, title, description }: { number: string; title: string; description: string }) {

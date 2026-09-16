@@ -2,10 +2,9 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Activity, ArrowLeft, Radio, ShieldCheck } from 'lucide-react';
+import { Activity, ArrowLeft, Radio } from 'lucide-react';
 import SosRequestForm from './sos-request-form';
 import StatusTracker from './status-tracker';
-import { PROJECT_NAME } from '@/lib/brand';
 
 type DashboardTab = 'sos' | 'status';
 
@@ -13,6 +12,7 @@ export default function VictimDashboard({ initialTab }: { initialTab: DashboardT
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<DashboardTab>(initialTab);
   const [submittedPhone, setSubmittedPhone] = useState('');
+  const headerTitle = activeTab === 'sos' ? 'แจ้งขอความช่วยเหลือ' : 'เช็คสถานะการช่วยเหลือ';
 
   const selectTab = (tab: DashboardTab) => {
     setActiveTab(tab);
@@ -32,21 +32,12 @@ export default function VictimDashboard({ initialTab }: { initialTab: DashboardT
           <span>หน้าหลัก</span>
         </button>
         <div className="victim-dashboard-brand">
-          <span><ShieldCheck size={18} strokeWidth={2.2} /></span>
-          <div><strong>{PROJECT_NAME}</strong><small>ช่วยเหลือและติดตามสถานะแบบเรียลไทม์</small></div>
+          <div><strong>{headerTitle}</strong><small>ช่วยเหลือและติดตามสถานะแบบเรียลไทม์</small></div>
         </div>
         <div className="victim-dashboard-live"><i /> พร้อมให้บริการ</div>
       </header>
 
       <main className="victim-dashboard-main">
-        <section className="victim-dashboard-intro">
-          <span className="victim-dashboard-eyebrow">EMERGENCY ASSISTANCE</span>
-          <h1>{activeTab === 'sos' ? 'แจ้งขอความช่วยเหลือ' : 'ติดตามการช่วยเหลือ'}</h1>
-          <p>{activeTab === 'sos'
-            ? 'กรอกข้อมูลตามขั้นตอน ระบบจะส่งพิกัดและรายละเอียดไปยังเจ้าหน้าที่ทันที'
-            : 'ตรวจสอบความคืบหน้าแบบเข้าใจง่ายด้วยเบอร์โทรที่ใช้แจ้งเหตุ'}</p>
-        </section>
-
         <nav className="victim-workspace-tabs" aria-label="เลือกพื้นที่ทำงาน">
           <button className={activeTab === 'sos' ? 'active' : ''} onClick={() => selectTab('sos')}>
             <span><Radio size={17} /></span>

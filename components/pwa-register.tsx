@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { getPendingSosCount, syncPendingSosRequests } from "@/lib/offline-sos-queue";
 
 type InstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -26,6 +27,8 @@ export function PwaRegister() {
   const [showIosHelp, setShowIosHelp] = useState(false);
   const [updateReady, setUpdateReady] = useState(false);
   const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null);
+  const [pendingSosCount, setPendingSosCount] = useState(0);
+  const [syncingSos, setSyncingSos] = useState(false);
 
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
@@ -76,6 +79,27 @@ export function PwaRegister() {
     };
   }, []);
 
+  useEffect(() => {
+    const refreshPendingCount = () => setPendingSosCount(getPendingSosCount());
+    const syncQueuedSos = async () => {
+      if (!navigator.onLine) return;
+      setSyncingSos(true);
+      await syncPendingSosRequests();
+      refreshPendingCount();
+      setSyncingSos(false);
+    };
+    const onOnline = () => { void syncQueuedSos(); };
+
+    refreshPendingCount();
+    void syncQueuedSos();
+    window.addEventListener('online', onOnline);
+    window.addEventListener('nexus:sos-queue-changed', refreshPendingCount);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('nexus:sos-queue-changed', refreshPendingCount);
+    };
+  }, []);
+
   const requestInstall = async () => {
     if (installPrompt) {
       await installPrompt.prompt();
@@ -101,7 +125,7 @@ export function PwaRegister() {
     (window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true);
   const canShowInstall = !isStandalone && (Boolean(installPrompt) || isAppleMobile());
 
-  if (!updateReady && !canShowInstall) return null;
+  if (!updateReady && !canShowInstall && pendingSosCount === 0) return null;
 
   return (
     <aside className="pwa-notice" aria-live="polite">
@@ -116,6 +140,19 @@ export function PwaRegister() {
           </button>
           <button className="pwa-dismiss" type="button" onClick={() => setUpdateReady(false)} aria-label="ปิด">
             ×
+          </button>
+        </>
+      ) : pendingSosCount > 0 ? (
+        <>
+          <div>
+            <strong>มีคำขอ SOS รอส่ง {pendingSosCount} รายการ</strong>
+            <span>{navigator.onLine ? 'ระบบจะส่งทันทีเมื่อเชื่อมต่อได้' : 'จะส่งให้อัตโนมัติเมื่ออินเทอร์เน็ตกลับมา'}</span>
+          </div>
+          <button type="button" onClick={() => {
+            setSyncingSos(true);
+            void syncPendingSosRequests().then(() => setPendingSosCount(getPendingSosCount())).finally(() => setSyncingSos(false));
+          }} disabled={!navigator.onLine || syncingSos}>
+            {syncingSos ? 'กำลังส่ง...' : 'ลองส่งตอนนี้'}
           </button>
         </>
       ) : showIosHelp ? (
