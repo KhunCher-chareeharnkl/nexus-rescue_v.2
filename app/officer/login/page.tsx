@@ -56,6 +56,7 @@ export default function OfficerLogin() {
   const [shelterMenuOpen, setShelterMenuOpen] = useState(false);
   const [shelterSearch, setShelterSearch] = useState('');
   const [code, setCode] = useState('');
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
@@ -106,12 +107,18 @@ export default function OfficerLogin() {
     setShelterMenuOpen(false);
     setShelterSearch('');
     setCode('');
+    setFullName('');
     setMessage(null);
   };
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!role) return;
+
+    if (!fullName.trim()) {
+      setMessage({ type: 'error', text: 'กรุณาระบุชื่อ-นามสกุลผู้ปฏิบัติงาน' });
+      return;
+    }
 
     if (role === 'shelter_staff' && !shelterId) {
       setMessage({ type: 'error', text: 'กรุณาเลือกศูนย์พักพิงที่ดูแล' });
@@ -138,7 +145,10 @@ export default function OfficerLogin() {
 
     const { error: otpError } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: getMagicLinkCallbackUrl() },
+      options: {
+        emailRedirectTo: getMagicLinkCallbackUrl(),
+        data: { full_name: fullName.trim() },
+      },
     });
 
     setLoading(false);
@@ -295,6 +305,11 @@ export default function OfficerLogin() {
                   {role === 'admin' && (
                     <div className="login-admin-note"><LockKeyhole size={17} /><p>บัญชีผู้ดูแลต้องได้รับสิทธิ์จากระบบล่วงหน้า การเข้าสู่ระบบจะไม่เปลี่ยนบทบาทเดิมของบัญชี</p></div>
                   )}
+
+                  <label className="login-field">
+                    <span>ชื่อ-นามสกุลผู้ปฏิบัติงาน</span>
+                    <div className="login-control"><UserCog size={17} /><input type="text" placeholder="เช่น สมชาย ใจดี" required value={fullName} onChange={(event) => setFullName(event.target.value)} autoComplete="name" /></div>
+                  </label>
 
                   <label className="login-field">
                     <span>อีเมลผู้ปฏิบัติงาน</span>

@@ -29,6 +29,7 @@ interface SOSReport {
 interface Profile {
   id: string;
   full_name: string;
+  email?: string | null;
   phone?: string;
   role: string;
   agency?: string;
@@ -233,14 +234,36 @@ export default function OfficerDashboard() {
 
       let resolvedProfile: Profile | null = null;
 
+      const accountEmail = user.email?.trim().toLowerCase() || null;
+      const metadataName = typeof user.user_metadata?.full_name === 'string'
+        ? user.user_metadata.full_name.trim()
+        : '';
+
       if (profErr || !prof) {
         const { data: created } = await supabase
           .from('profiles')
-          .insert({ id: user.id, full_name: user.email ?? 'เจ้าหน้าที่', role: 'rescuer' })
+          .insert({
+            id: user.id,
+            full_name: metadataName || user.email || 'เจ้าหน้าที่',
+            email: accountEmail,
+            role: 'rescuer',
+          })
           .select().single();
         resolvedProfile = created;
       } else {
         resolvedProfile = prof;
+        const identityPatch: Record<string, string> = {};
+        if (accountEmail && prof.email !== accountEmail) identityPatch.email = accountEmail;
+        if (metadataName && (!prof.full_name || prof.full_name === 'เจ้าหน้าที่')) identityPatch.full_name = metadataName;
+        if (Object.keys(identityPatch).length) {
+          const { data: updated } = await supabase
+            .from('profiles')
+            .update(identityPatch)
+            .eq('id', user.id)
+            .select()
+            .single();
+          if (updated) resolvedProfile = updated;
+        }
       }
 
       // หน้านี้เป็นของเจ้าหน้าที่กู้ภัย (rescuer) เท่านั้น

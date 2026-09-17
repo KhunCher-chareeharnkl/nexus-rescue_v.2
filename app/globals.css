@@ -1,9 +1,14 @@
+@import "@fontsource/ibm-plex-sans-thai/300.css";
+@import "@fontsource/ibm-plex-sans-thai/400.css";
+@import "@fontsource/ibm-plex-sans-thai/500.css";
+@import "@fontsource/ibm-plex-sans-thai/600.css";
+@import "@fontsource/ibm-plex-sans-thai/700.css";
 @import "tailwindcss";
 
 :root {
   --background: #f9fbfe;
   --foreground: #171717;
-  --font-thai: "Noto Sans Thai", "Leelawadee UI", Tahoma, Arial, sans-serif;
+  --font-thai: "IBM Plex Sans Thai", "Noto Sans Thai", "Leelawadee UI", Tahoma, Arial, sans-serif;
   --font-geist-sans: "Segoe UI", Arial, sans-serif;
   --font-geist-mono: "Cascadia Mono", Consolas, monospace;
 }

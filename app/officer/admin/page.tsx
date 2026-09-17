@@ -8,6 +8,7 @@ import { PROJECT_NAME } from '@/lib/brand';
 interface Profile {
   id: string;
   full_name: string;
+  email?: string | null;
   phone?: string | null;
   role: string;
   agency?: string | null;
@@ -648,6 +649,8 @@ function UsersTab() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [editingNameId, setEditingNameId] = useState<string | null>(null);
+  const [nameDraft, setNameDraft] = useState('');
 
   const fetchAll = async () => {
     const [{ data: u }, { data: s }] = await Promise.all([
@@ -667,8 +670,10 @@ function UsersTab() {
       const { error } = await supabase.from('profiles').update(patch).eq('id', id);
       if (error) throw error;
       setUsers(prev => prev.map(u => u.id === id ? { ...u, ...patch } : u));
+      return true;
     } catch (err: any) {
       alert(`บันทึกไม่สำเร็จ: ${err.message}`);
+      return false;
     } finally {
       setSavingId(null);
     }
@@ -681,7 +686,7 @@ function UsersTab() {
 
   const filtered = users.filter(u => {
     if (roleFilter !== 'all' && u.role !== roleFilter) return false;
-    if (search && !u.full_name.toLowerCase().includes(search.toLowerCase()) && !(u.phone ?? '').includes(search)) return false;
+    if (search && !u.full_name.toLowerCase().includes(search.toLowerCase()) && !(u.email ?? '').toLowerCase().includes(search.toLowerCase()) && !(u.phone ?? '').includes(search)) return false;
     return true;
   });
 
@@ -711,9 +716,23 @@ function UsersTab() {
           <div style={{ padding: 30, textAlign: 'center', color: '#7D8597', fontSize: 13 }}>ไม่พบผู้ใช้งาน</div>
         ) : filtered.map((u, i) => (
           <div className="admin-row" key={u.id} style={{ padding: 14, borderBottom: i < filtered.length - 1 ? '1px solid #E8EDF4' : 'none', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <div style={{ flex: '1 1 180px', minWidth: 160 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#001845' }}>{u.full_name}</div>
-              <div style={{ fontSize: 11, color: '#7D8597' }}>{u.phone ?? 'ไม่มีเบอร์โทร'} {u.agency ? `· ${u.agency}` : ''}</div>
+            <div style={{ flex: '1 1 250px', minWidth: 220 }}>
+              {editingNameId === u.id ? (
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <input aria-label="ชื่อเจ้าหน้าที่" value={nameDraft} onChange={e => setNameDraft(e.target.value)} style={{ ...inputStyle, minWidth: 0, flex: 1, padding: '7px 9px' }} autoFocus />
+                  <button type="button" disabled={!nameDraft.trim() || savingId === u.id} onClick={async () => {
+                    if (await updateUser(u.id, { full_name: nameDraft.trim() })) setEditingNameId(null);
+                  }} style={{ padding: '7px 9px', border: 0, borderRadius: 8, background: '#0353A4', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>บันทึก</button>
+                  <button type="button" disabled={savingId === u.id} onClick={() => setEditingNameId(null)} style={{ padding: '7px 8px', border: '1px solid #D6DFEA', borderRadius: 8, background: '#fff', color: '#5C677D', fontSize: 11, cursor: 'pointer' }}>ยกเลิก</button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#001845' }}>{u.full_name || 'ยังไม่ระบุชื่อ'}</div>
+                  <button type="button" onClick={() => { setNameDraft(u.full_name === 'เจ้าหน้าที่' ? '' : u.full_name); setEditingNameId(u.id); }} style={{ padding: 0, border: 0, background: 'transparent', color: '#0466C8', fontSize: 11, cursor: 'pointer' }}>แก้ชื่อ</button>
+                </div>
+              )}
+              <div style={{ fontSize: 11, color: '#5C677D', marginTop: 3 }}>{u.email ?? 'ยังไม่ได้บันทึกอีเมล'}</div>
+              <div style={{ fontSize: 11, color: '#7D8597', marginTop: 2 }}>{u.phone ?? 'ไม่มีเบอร์โทร'} {u.agency ? `· ${u.agency}` : ''}</div>
             </div>
 
             <select
