@@ -563,6 +563,14 @@ export default function OfficerDashboard() {
     });
   };
 
+  const selectCannotReachReason = (reason: NonNullable<OutcomeDraft['cannotReachReason']>) => {
+    setOutcomeDraft(current => current ? {
+      ...current,
+      mode: 'cannot_reach',
+      cannotReachReason: reason,
+    } : current);
+  };
+
   // ตรวจข้อมูลแบบกลุ่ม แล้วบันทึกผ่าน RPC เดียวให้ฐานข้อมูลทำงานแบบ atomic
   const confirmOutcome = async () => {
     if (!outcomeDraft || !profile) return;
@@ -1408,30 +1416,34 @@ export default function OfficerDashboard() {
                 <div style={{ fontSize: 13, fontWeight: 700, color: '#374151' }}>เหตุผลที่เข้าไม่ถึง</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   <button
-                    onClick={() => setOutcomeDraft({ ...outcomeDraft, cannotReachReason: 'no_access' })}
+                    type="button"
+                    onClick={() => selectCannotReachReason('no_access')}
+                    aria-pressed={outcomeDraft.cannotReachReason === 'no_access'}
                     style={{
                       padding: '10px', borderRadius: 10, fontFamily: 'inherit', cursor: 'pointer',
                       border: outcomeDraft.cannotReachReason === 'no_access' ? '2px solid #F59E0B' : '1px solid #E5E7EB',
                       background: outcomeDraft.cannotReachReason === 'no_access' ? '#FEF3C7' : '#fff',
                       color: '#92400E', fontSize: 13, fontWeight: 700,
                     }}>
-                    🌊 เข้าไม่ถึง (รอเข้าใหม่)
+                    เข้าไม่ถึง (รอเข้าใหม่)
                   </button>
                   <button
-                    onClick={() => setOutcomeDraft({ ...outcomeDraft, cannotReachReason: 'deceased' })}
+                    type="button"
+                    onClick={() => selectCannotReachReason('deceased')}
+                    aria-pressed={outcomeDraft.cannotReachReason === 'deceased'}
                     style={{
                       padding: '10px', borderRadius: 10, fontFamily: 'inherit', cursor: 'pointer',
                       border: outcomeDraft.cannotReachReason === 'deceased' ? '2px solid #6B7280' : '1px solid #E5E7EB',
                       background: outcomeDraft.cannotReachReason === 'deceased' ? '#F3F4F6' : '#fff',
                       color: '#374151', fontSize: 13, fontWeight: 700,
                     }}>
-                    🕯️ เสียชีวิต
+                    เสียชีวิต
                   </button>
                 </div>
                 <textarea
-                  placeholder="รายละเอียดเพิ่มเติม (ถ้ามี)"
+                  placeholder="รายละเอียดเพิ่มเติม (ไม่บังคับ)"
                   value={outcomeDraft.notes}
-                  onChange={e => setOutcomeDraft({ ...outcomeDraft, notes: e.target.value })}
+                  onChange={e => setOutcomeDraft(current => current ? { ...current, notes: e.target.value } : current)}
                   rows={2}
                   style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #E5E7EB', fontSize: 14, fontFamily: 'inherit', resize: 'vertical' }}
                 />
@@ -1447,12 +1459,12 @@ export default function OfficerDashboard() {
               </button>
               <button
                 onClick={confirmOutcome}
-                disabled={outcomeSaving || !outcomeDraft.mode}
+                disabled={outcomeSaving || !outcomeDraft.mode || (outcomeDraft.mode === 'cannot_reach' && !outcomeDraft.cannotReachReason)}
                 style={{
                   padding: '13px', borderRadius: 12, border: 'none',
-                  background: !outcomeDraft.mode ? '#E5E7EB' : '#111827',
+                  background: !outcomeDraft.mode || (outcomeDraft.mode === 'cannot_reach' && !outcomeDraft.cannotReachReason) ? '#E5E7EB' : '#111827',
                   color: '#fff', fontSize: 14, fontWeight: 700,
-                  cursor: outcomeSaving || !outcomeDraft.mode ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+                  cursor: outcomeSaving || !outcomeDraft.mode || (outcomeDraft.mode === 'cannot_reach' && !outcomeDraft.cannotReachReason) ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
                 }}>
                 {outcomeSaving ? 'กำลังบันทึก...' : 'ยืนยัน'}
               </button>

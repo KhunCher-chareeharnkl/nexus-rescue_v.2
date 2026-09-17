@@ -8,6 +8,8 @@ type InstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 };
 
+const INSTALL_NOTICE_DISMISSED_KEY = "nexus_pwa_install_notice_dismissed";
+
 declare global {
   interface WindowEventMap {
     beforeinstallprompt: InstallPromptEvent;
@@ -24,11 +26,18 @@ function isAppleMobile() {
 
 export function PwaRegister() {
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
+  const [installDismissed, setInstallDismissed] = useState(false);
   const [showIosHelp, setShowIosHelp] = useState(false);
   const [updateReady, setUpdateReady] = useState(false);
   const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null);
   const [pendingSosCount, setPendingSosCount] = useState(0);
   const [syncingSos, setSyncingSos] = useState(false);
+
+  useEffect(() => {
+    setInstallDismissed(
+      window.localStorage.getItem(INSTALL_NOTICE_DISMISSED_KEY) === "true",
+    );
+  }, []);
 
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
@@ -103,12 +112,19 @@ export function PwaRegister() {
   const requestInstall = async () => {
     if (installPrompt) {
       await installPrompt.prompt();
-      await installPrompt.userChoice;
+      const choice = await installPrompt.userChoice;
       setInstallPrompt(null);
+      if (choice.outcome === "dismissed") dismissInstallNotice();
       return;
     }
 
     if (isAppleMobile()) setShowIosHelp(true);
+  };
+
+  const dismissInstallNotice = () => {
+    window.localStorage.setItem(INSTALL_NOTICE_DISMISSED_KEY, "true");
+    setShowIosHelp(false);
+    setInstallDismissed(true);
   };
 
   const applyUpdate = () => {
@@ -123,7 +139,8 @@ export function PwaRegister() {
   const isStandalone =
     typeof window !== "undefined" &&
     (window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true);
-  const canShowInstall = !isStandalone && (Boolean(installPrompt) || isAppleMobile());
+  const canShowInstall =
+    !installDismissed && !isStandalone && (Boolean(installPrompt) || isAppleMobile());
 
   if (!updateReady && !canShowInstall && pendingSosCount === 0) return null;
 
@@ -161,7 +178,7 @@ export function PwaRegister() {
             <strong>ติดตั้ง Nexus Rescue</strong>
             <span>กดปุ่มแชร์ใน Safari แล้วเลือก “เพิ่มไปยังหน้าจอโฮม”</span>
           </div>
-          <button className="pwa-dismiss" type="button" onClick={() => setShowIosHelp(false)} aria-label="ปิด">
+          <button className="pwa-dismiss" type="button" onClick={dismissInstallNotice} aria-label="ปิด">
             ×
           </button>
         </>
@@ -173,6 +190,9 @@ export function PwaRegister() {
           </div>
           <button type="button" onClick={() => void requestInstall()}>
             ติดตั้ง
+          </button>
+          <button className="pwa-dismiss" type="button" onClick={dismissInstallNotice} aria-label="ปิด">
+            ×
           </button>
         </>
       )}

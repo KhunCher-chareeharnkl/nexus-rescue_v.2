@@ -131,4 +131,6 @@ $$;
 revoke all on function public.confirm_rescue_outcome_v4(uuid, text, text, uuid, text, integer, integer, integer, text, text, jsonb, text, text, text, text) from public, anon;
 grant execute on function public.confirm_rescue_outcome_v4(uuid, text, text, uuid, text, integer, integer, integer, text, text, jsonb, text, text, text, text) to authenticated;
 
+notify pgrst, 'reload schema';
+
 commit;
