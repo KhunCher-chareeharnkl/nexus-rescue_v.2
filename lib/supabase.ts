@@ -45,6 +45,13 @@ const writeBrowserCookies: SetAllCookies = (cookiesToSet) => {
 };
 
 export const supabase = createBrowserClient(supabaseUrl, supabaseKey, {
+  // Magic Links are frequently opened from iOS Mail/Safari rather than the
+  // browser that requested them. PKCE needs a verifier from that first browser;
+  // implicit flow lets the callback establish its session on the device opening
+  // the link instead.
+  auth: {
+    flowType: 'implicit',
+  },
   cookieOptions: authCookieOptions,
   cookies: {
     getAll: readBrowserCookies,

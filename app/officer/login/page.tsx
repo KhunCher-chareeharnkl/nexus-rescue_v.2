@@ -68,7 +68,7 @@ export default function OfficerLogin() {
   };
 
   const getMagicLinkCallbackUrl = () => {
-    const callbackUrl = new URL('/auth/callback', getRedirectUrl());
+    const callbackUrl = new URL('/auth/complete', getRedirectUrl());
     callbackUrl.searchParams.set('next', '/officer/dashboard');
     return callbackUrl.toString();
   };
