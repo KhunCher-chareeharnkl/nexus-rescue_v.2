@@ -38,7 +38,7 @@ type SosReport = {
 };
 
 type VictimDestinationStatus = {
-  status: 'waiting' | 'rescue_assigned' | 'rescued' | 'at_shelter' | 'returned_home' | 'unknown';
+  status: 'waiting' | 'rescue_assigned' | 'rescued' | 'at_shelter' | 'returned_home' | 'unknown' | 'deceased';
   shelter_name: string | null;
   notes: string | null;
   updated_at: string | null;
@@ -191,6 +191,13 @@ export default function StatusTracker({
         title: 'กลับถึงบ้านแล้ว',
         description: destinationStatus.notes || 'ออกจากศูนย์พักพิงและเดินทางกลับบ้านเรียบร้อยแล้ว',
         badge: 'กลับบ้าน',
+      };
+    }
+    if (report.status === 'closed' && destinationStatus?.status === 'deceased') {
+      return {
+        title: 'ปิดเคสแล้ว',
+        description: destinationStatus.notes || 'เจ้าหน้าที่บันทึกผลว่าเสียชีวิตและปิดเคสเรียบร้อย',
+        badge: 'บันทึกผลสิ้นสุดแล้ว',
       };
     }
     if (report.status === 'rescued' && destinationStatus?.notes) {

@@ -26,6 +26,7 @@ import {
   type SosRequestPayload,
 } from '@/lib/offline-sos-queue';
 import thaiAddressData from '@riz007/thai-address-data';
+import { useThaiAddressDirectory } from '@/lib/thai-address-directory';
 
 const AVAILABLE_ITEMS = [
   'อาหารและน้ำดื่ม',
@@ -154,9 +155,9 @@ export default function SosRequestForm({ onSubmitted }: { onSubmitted: (phone: s
   const hasGpsCoordinates = lat !== null && lng !== null;
   const hasAddressDetails = [houseNumber, villageNumber, soi, road, landmark].some((value) => value.trim().length > 0);
   const hasLocationDetails = hasGpsCoordinates || hasAddressDetails;
-  const provinces = useMemo(() => unique(thaiAddressData.map((item) => item.province)), []);
-  const districts = useMemo(() => unique(thaiAddressData.filter((item) => item.province === province).map((item) => item.district)), [province]);
-  const subDistrictRows = useMemo(() => thaiAddressData.filter((item) => item.province === province && item.district === district), [province, district]);
+  const { rows: addressRows, provinces, byProvince } = useThaiAddressDirectory(thaiAddressData);
+  const districts = useMemo(() => unique((byProvince.get(province) ?? []).map((item) => item.district)), [byProvince, province]);
+  const subDistrictRows = useMemo(() => addressRows.filter((item) => item.province === province && item.district === district), [addressRows, province, district]);
   const subDistricts = useMemo(() => unique(subDistrictRows.map((item) => item.subdistrict)), [subDistrictRows]);
 
   useEffect(() => {

@@ -27,6 +27,7 @@ set search_path = public, pg_temp
 as $$
 declare
   v_active_assignment_id uuid;
+  v_outcome_note text;
 begin
   if auth.uid() is null then
     raise exception using errcode = '42501', message = 'กรุณาเข้าสู่ระบบก่อนยืนยันผลการช่วยเหลือ';
@@ -55,12 +56,23 @@ begin
       raise exception using errcode = '22023', message = 'สถานะผู้ประสบภัยกรณีช่วยเหลือไม่ได้ไม่ถูกต้อง';
     end if;
 
+    -- Some existing databases require a non-empty operational note when an
+    -- assignment cannot be completed. Keep the form optional by recording a
+    -- clear system note when the rescuer leaves the detail blank.
+    v_outcome_note := coalesce(
+      nullif(btrim(coalesce(p_notes, '')), ''),
+      case p_cannot_reach_reason
+        when 'no_access' then 'เจ้าหน้าที่เข้าถึงพื้นที่ไม่ได้: รอประเมินและเข้าช่วยเหลือใหม่'
+        when 'deceased' then 'ยืนยันเหตุเสียชีวิต: รอการประสานหน่วยงานที่เกี่ยวข้อง'
+      end
+    );
+
     -- Set the reason in the same UPDATE as status so chk_unable_reason_required
     -- never observes an invalid intermediate row.
     update public.assignments
     set status = 'cannot_reach',
         cannot_reach_reason = p_cannot_reach_reason,
-        notes = nullif(btrim(coalesce(p_notes, '')), ''),
+        notes = v_outcome_note,
         completed_at = coalesce(completed_at, now())
     where id = v_active_assignment_id;
 
@@ -74,7 +86,7 @@ begin
       p_sos_report_id,
       'unknown',
       null,
-      coalesce(nullif(btrim(coalesce(p_victim_notes, '')), ''), nullif(btrim(coalesce(p_notes, '')), '')),
+      coalesce(nullif(btrim(coalesce(p_victim_notes, '')), ''), v_outcome_note),
       now()
     )
     on conflict (sos_report_id) do update

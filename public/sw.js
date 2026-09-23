@@ -1,4 +1,4 @@
-const STATIC_CACHE = "nexus-rescue-static-v2";
+const STATIC_CACHE = "nexus-rescue-static-v3";
 const OFFLINE_PAGE = "/offline.html";
 const APP_SHELLS = ["/", "/victim/dashboard"];
 
@@ -17,6 +17,29 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("message", (event) => {
   if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
+});
+
+self.addEventListener("push", (event) => {
+  let payload = {};
+  try { payload = event.data ? event.data.json() : {}; } catch { payload = {}; }
+  const title = payload.title || "Nexus Rescue";
+  event.waitUntil(self.registration.showNotification(title, {
+    body: payload.body || "มีรายการใหม่ที่ต้องตรวจสอบ",
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+    tag: payload.tag || "nexus-rescue",
+    data: { url: payload.url || "/officer/dashboard" },
+  }));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = new URL(event.notification.data?.url || "/officer/dashboard", self.location.origin).href;
+  event.waitUntil(clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
+    const existing = windows.find((client) => client.url.startsWith(self.location.origin));
+    if (existing) return existing.focus().then(() => existing.navigate(target));
+    return clients.openWindow(target);
+  }));
 });
 
 self.addEventListener("fetch", (event) => {

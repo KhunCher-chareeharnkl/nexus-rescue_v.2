@@ -707,7 +707,7 @@ export default function OfficerDashboard() {
     ].filter(Boolean);
     const victimStatus = d.mode === 'rescued'
       ? (d.destinationType === 'shelter' && primaryTotal > 0 ? 'at_shelter' : 'rescued')
-      : 'unknown';
+      : (d.cannotReachReason === 'deceased' ? 'deceased' : 'unknown');
     const victimShelterName = d.mode === 'rescued' && d.destinationType === 'shelter' && primaryTotal > 0
       ? selectedShelter?.name ?? null
       : null;
@@ -786,7 +786,9 @@ export default function OfficerDashboard() {
       }
 
       // อัปเดต UI local state ให้ตรงกับ DB ทันที
-      const newSOSStatus = d.mode === 'rescued' ? 'rescued' : 'cannot_reach';
+      const newSOSStatus = d.mode === 'rescued'
+        ? 'rescued'
+        : (d.cannotReachReason === 'deceased' ? 'closed' : 'cannot_reach');
       setReports(prev => prev.map(r => r.id === d.reportId ? { ...r, status: newSOSStatus as SOSReport['status'] } : r));
       setActiveAssignments(prev => { const next = { ...prev }; delete next[d.reportId]; return next; });
       if (navigatingId === d.reportId) setNavigatingId(null);
@@ -1425,7 +1427,7 @@ export default function OfficerDashboard() {
                       background: outcomeDraft.cannotReachReason === 'no_access' ? '#FEF3C7' : '#fff',
                       color: '#92400E', fontSize: 13, fontWeight: 700,
                     }}>
-                    เข้าไม่ถึง (รอเข้าใหม่)
+                    เข้าไม่ถึง (รอเข้าช่วยใหม่)
                   </button>
                   <button
                     type="button"
@@ -1437,9 +1439,12 @@ export default function OfficerDashboard() {
                       background: outcomeDraft.cannotReachReason === 'deceased' ? '#F3F4F6' : '#fff',
                       color: '#374151', fontSize: 13, fontWeight: 700,
                     }}>
-                    เสียชีวิต
+                    เสียชีวิตทั้งหมด (ปิดเคส)
                   </button>
                 </div>
+                <p style={{ margin: 0, color: '#667085', fontSize: 12, lineHeight: 1.5 }}>
+                  หากมีผู้รอดชีวิตอย่างน้อย 1 คน ให้เลือก “ช่วยเหลือได้” แล้วบันทึกผู้เสียชีวิตในรายการแยกปลายทาง
+                </p>
                 <textarea
                   placeholder="รายละเอียดเพิ่มเติม (ไม่บังคับ)"
                   value={outcomeDraft.notes}

@@ -12,6 +12,7 @@ import { PROJECT_NAME } from '@/lib/brand';
 import { getSavedPhone, getSosReportId, saveSosSession } from '@/lib/session';
 import { supabase } from '@/lib/supabase';
 import thaiAddressData from '@riz007/thai-address-data';
+import { useThaiAddressDirectory } from '@/lib/thai-address-directory';
 import styles from './page.module.css';
 
 type ClaimCategory = 'housing_property' | 'agriculture_livelihood';
@@ -157,9 +158,9 @@ export default function CompensationPage() {
   const [houseRegistrationFile, setHouseRegistrationFile] = useState<File | null>(null);
   const [damageFiles, setDamageFiles] = useState<File[]>([]);
 
-  const provinces = useMemo(() => unique(thaiAddressData.map(item => item.province)), []);
-  const districts = useMemo(() => unique(thaiAddressData.filter(item => item.province === draft.province).map(item => item.district)), [draft.province]);
-  const subDistrictRows = useMemo(() => thaiAddressData.filter(item => item.province === draft.province && item.district === draft.district), [draft.province, draft.district]);
+  const { rows: addressRows, provinces, byProvince } = useThaiAddressDirectory(thaiAddressData);
+  const districts = useMemo(() => unique((byProvince.get(draft.province) ?? []).map(item => item.district)), [byProvince, draft.province]);
+  const subDistrictRows = useMemo(() => addressRows.filter(item => item.province === draft.province && item.district === draft.district), [addressRows, draft.province, draft.district]);
   const subDistricts = useMemo(() => unique(subDistrictRows.map(item => item.subdistrict)), [subDistrictRows]);
 
   useEffect(() => {

@@ -9,6 +9,13 @@ type InstallPromptEvent = Event & {
 };
 
 const INSTALL_NOTICE_DISMISSED_KEY = "nexus_pwa_install_notice_dismissed";
+const PUSH_NOTICE_DISMISSED_KEY = "nexus_push_notice_dismissed";
+
+function base64UrlToUint8Array(value: string) {
+  const padded = value.padEnd(value.length + (4 - (value.length % 4)) % 4, '=');
+  const binary = atob(padded.replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
 
 declare global {
   interface WindowEventMap {
@@ -26,18 +33,16 @@ function isAppleMobile() {
 
 export function PwaRegister() {
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
-  const [installDismissed, setInstallDismissed] = useState(false);
+  const [installDismissed, setInstallDismissed] = useState(() => typeof window !== 'undefined' && window.localStorage.getItem(INSTALL_NOTICE_DISMISSED_KEY) === "true");
   const [showIosHelp, setShowIosHelp] = useState(false);
   const [updateReady, setUpdateReady] = useState(false);
   const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null);
   const [pendingSosCount, setPendingSosCount] = useState(0);
   const [syncingSos, setSyncingSos] = useState(false);
-
-  useEffect(() => {
-    setInstallDismissed(
-      window.localStorage.getItem(INSTALL_NOTICE_DISMISSED_KEY) === "true",
-    );
-  }, []);
+  const [pushRegistration, setPushRegistration] = useState<ServiceWorkerRegistration | null>(null);
+  const [pushPermission, setPushPermission] = useState<NotificationPermission | 'unsupported'>('unsupported');
+  const [pushDismissed, setPushDismissed] = useState(() => typeof window !== 'undefined' && window.localStorage.getItem(PUSH_NOTICE_DISMISSED_KEY) === "true");
+  const [enablingPush, setEnablingPush] = useState(false);
 
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
@@ -56,6 +61,8 @@ export function PwaRegister() {
     const register = async () => {
       try {
         const registration = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+        setPushRegistration(registration);
+        if ('Notification' in window && 'PushManager' in window) setPushPermission(Notification.permission);
 
         if (registration.waiting) {
           setWaitingWorker(registration.waiting);
@@ -136,13 +143,41 @@ export function PwaRegister() {
     window.location.reload();
   };
 
+  const enablePush = async () => {
+    const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    if (!pushRegistration || !publicKey || !('Notification' in window)) return;
+    setEnablingPush(true);
+    try {
+      const permission = await Notification.requestPermission();
+      setPushPermission(permission);
+      if (permission !== 'granted') return;
+      const subscription = await pushRegistration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: base64UrlToUint8Array(publicKey),
+      });
+      const response = await fetch('/api/push/subscribe', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(subscription),
+      });
+      if (!response.ok) throw new Error('บันทึกการแจ้งเตือนไม่สำเร็จ');
+      window.localStorage.setItem(PUSH_NOTICE_DISMISSED_KEY, 'true');
+      setPushDismissed(true);
+    } catch {
+      // Permission can be retried from browser settings if the user chooses to.
+    } finally {
+      setEnablingPush(false);
+    }
+  };
+
   const isStandalone =
     typeof window !== "undefined" &&
     (window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true);
   const canShowInstall =
     !installDismissed && !isStandalone && (Boolean(installPrompt) || isAppleMobile());
+  const canShowPush =
+    !pushDismissed && pushRegistration !== null && pushPermission === 'default'
+    && Boolean(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY);
 
-  if (!updateReady && !canShowInstall && pendingSosCount === 0) return null;
+  if (!updateReady && !canShowInstall && !canShowPush && pendingSosCount === 0) return null;
 
   return (
     <aside className="pwa-notice" aria-live="polite">
@@ -171,6 +206,17 @@ export function PwaRegister() {
           }} disabled={!navigator.onLine || syncingSos}>
             {syncingSos ? 'กำลังส่ง...' : 'ลองส่งตอนนี้'}
           </button>
+        </>
+      ) : canShowPush ? (
+        <>
+          <div>
+            <strong>เปิดการแจ้งเตือนภารกิจ</strong>
+            <span>รับแจ้งเตือน SOS และรายการรอยืนยัน แม้ไม่ได้เปิดหน้าเว็บ</span>
+          </div>
+          <button type="button" onClick={() => void enablePush()} disabled={enablingPush}>
+            {enablingPush ? 'กำลังเปิด...' : 'เปิดแจ้งเตือน'}
+          </button>
+          <button className="pwa-dismiss" type="button" onClick={() => { window.localStorage.setItem(PUSH_NOTICE_DISMISSED_KEY, 'true'); setPushDismissed(true); }} aria-label="ปิด">×</button>
         </>
       ) : showIosHelp ? (
         <>

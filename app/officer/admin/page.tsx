@@ -89,7 +89,7 @@ interface ClaimStatusAudit {
 
 const ADMIN_PAGE_SIZE = 25;
 
-type Tab = 'overview' | 'users' | 'shelters' | 'victims' | 'compensation';
+type Tab = 'overview' | 'users' | 'shelters' | 'victims' | 'compensation' | 'governance';
 
 const TAB_META: Record<Tab, { title: string; description: string }> = {
   overview: { title: 'ภาพรวมระบบ', description: 'ติดตามสถานการณ์และข้อมูลสำคัญแบบเรียลไทม์' },
@@ -97,6 +97,7 @@ const TAB_META: Record<Tab, { title: string; description: string }> = {
   shelters: { title: 'ศูนย์พักพิง', description: 'ดูแลข้อมูล ความจุ และสถานะของศูนย์พักพิง' },
   victims: { title: 'ผู้ประสบภัย', description: 'ตรวจสอบรายการแจ้งเหตุและความคืบหน้าการช่วยเหลือ' },
   compensation: { title: 'คำขอเยียวยา', description: 'ตรวจสอบ อนุมัติ และติดตามคำขอเยียวยา' },
+  governance: { title: 'กำกับและตรวจสอบ', description: 'ยืนยันเหตุเสียชีวิต ดูประวัติการปฏิบัติงาน และอัปเดตคลังที่อยู่' },
 };
 
 const ROLE_LABEL: Record<string, string> = {
@@ -597,6 +598,7 @@ export default function AdminPage() {
               <TabButton active={tab === 'shelters'} onClick={() => setTab('shelters')} label="ศูนย์พักพิง" />
               <TabButton active={tab === 'victims'} onClick={() => setTab('victims')} label="ผู้ประสบภัย" />
               <TabButton active={tab === 'compensation'} onClick={() => setTab('compensation')} label="เยียวยา" />
+              <TabButton active={tab === 'governance'} onClick={() => setTab('governance')} label="กำกับ" />
             </nav>
             <button className="admin-logout" onClick={handleLogout} style={{ padding: '7px 14px', borderRadius: 10, border: '1px solid #DDE3EC', background: '#fff', fontSize: 13, fontWeight: 600, color: '#5C677D', cursor: 'pointer' }}>
               <span aria-hidden="true">↗</span> ออกจากระบบ
@@ -620,11 +622,106 @@ export default function AdminPage() {
               {tab === 'shelters' && <SheltersTab />}
               {tab === 'victims' && <VictimsTab />}
               {tab === 'compensation' && <CompensationTab />}
+              {tab === 'governance' && <GovernanceTab />}
             </div>
           </section>
         </main>
       </div>
     </>
+  );
+}
+
+type DeathConfirmation = {
+  id: string;
+  status: 'pending_review' | 'confirmed' | 'rejected';
+  reported_at: string;
+  reported_note?: string | null;
+  sos?: { full_name?: string | null; province?: string | null } | null;
+};
+
+type OperationAudit = {
+  id: string;
+  created_at: string;
+  entity_type: string;
+  action: string;
+  actor?: { full_name?: string | null } | null;
+};
+
+function GovernanceTab() {
+  const [confirmations, setConfirmations] = useState<DeathConfirmation[]>([]);
+  const [audit, setAudit] = useState<OperationAudit[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [syncingAddresses, setSyncingAddresses] = useState(false);
+  const [notice, setNotice] = useState('');
+
+  const load = async () => {
+    setLoading(true);
+    const [{ data: deathRows }, { data: auditRows }] = await Promise.all([
+      supabase.from('death_case_confirmations')
+        .select('id,status,reported_at,reported_note,sos:sos_reports(full_name,province)')
+        .order('reported_at', { ascending: false }).limit(50),
+      supabase.from('operation_audit_logs')
+        .select('id,created_at,entity_type,action,actor:profiles(full_name)')
+        .order('created_at', { ascending: false }).limit(100),
+    ]);
+    setConfirmations((deathRows as DeathConfirmation[]) ?? []);
+    setAudit((auditRows as OperationAudit[]) ?? []);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void load(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  const review = async (id: string, decision: 'confirmed' | 'rejected') => {
+    const reviewNote = decision === 'rejected'
+      ? window.prompt('ระบุเหตุผลที่ไม่ยืนยันรายงาน (จำเป็น)')
+      : window.prompt('บันทึกหมายเหตุการยืนยัน (ถ้ามี)');
+    if (decision === 'rejected' && !reviewNote?.trim()) return;
+    setSavingId(id); setNotice('');
+    const { error } = await supabase.rpc('review_death_case_confirmation', {
+      p_confirmation_id: id, p_decision: decision, p_review_note: reviewNote?.trim() || null,
+    });
+    setSavingId(null);
+    if (error) { setNotice(`บันทึกไม่สำเร็จ: ${error.message}`); return; }
+    setNotice(decision === 'confirmed' ? 'ยืนยันและคงสถานะปิดเคสแล้ว' : 'ไม่ยืนยันแล้ว เคสกลับไปรอประสานเข้าช่วยใหม่');
+    void load();
+  };
+
+  const syncAddresses = async () => {
+    setSyncingAddresses(true); setNotice('');
+    const response = await fetch('/api/address-sync', { method: 'POST' });
+    const result = await response.json().catch(() => ({})) as { error?: string };
+    setSyncingAddresses(false);
+    setNotice(response.ok ? 'อัปเดตคลังจังหวัด/อำเภอ/ตำบลในฐานข้อมูลแล้ว' : `อัปเดตไม่สำเร็จ: ${result.error ?? 'ไม่ทราบสาเหตุ'} — ข้อมูลเดิมยังใช้งานได้`);
+  };
+
+  if (loading) return <div style={{ color: '#5C677D', padding: 20 }}>กำลังโหลดข้อมูลกำกับและตรวจสอบ...</div>;
+  return (
+    <div className="admin-panel" style={{ display: 'grid', gap: 16 }}>
+      {notice && <div className="admin-alert" style={{ padding: 13, background: '#EAF3FC', color: '#023E7D', fontSize: 13 }}>{notice}</div>}
+      <section className="admin-form-card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div><b>คลังที่อยู่สำรอง</b><div style={{ color: '#5C677D', fontSize: 12, marginTop: 3 }}>หน้าเว็บอ่านข้อมูลจากฐานข้อมูลก่อนเสมอ การอัปเดตจาก API ล้มเหลวจะไม่ลบข้อมูลเดิม</div></div>
+          <button className="admin-add-button" onClick={() => void syncAddresses()} disabled={syncingAddresses} style={{ border: 0, padding: '10px 14px', color: '#fff', cursor: 'pointer' }}>{syncingAddresses ? 'กำลังอัปเดต...' : 'อัปเดตข้อมูลที่อยู่'}</button>
+        </div>
+      </section>
+      <section className="admin-list">
+        <div style={{ padding: 16, borderBottom: '1px solid #E8EDF4' }}><b>รายการรอยืนยันกรณีเสียชีวิต</b><div style={{ color: '#5C677D', fontSize: 12 }}>ยืนยันแล้วคงสถานะปิดเคส; ไม่ยืนยันจะเปิดให้ประสานเข้าช่วยใหม่</div></div>
+        {!confirmations.length ? <div style={{ padding: 16, color: '#5C677D', fontSize: 13 }}>ไม่มีรายการรอยืนยัน</div> : confirmations.map((item) => (
+          <div className="admin-row" key={item.id} style={{ borderBottom: '1px solid #E8EDF4', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 200 }}><b>{item.sos?.full_name ?? 'คำขอ SOS'}</b><div style={{ color: '#5C677D', fontSize: 12 }}>{item.sos?.province ?? '-'} · {new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item.reported_at))}</div>{item.reported_note && <div style={{ color: '#33415C', fontSize: 12, marginTop: 4 }}>{item.reported_note}</div>}</div>
+            {item.status === 'pending_review' ? <><button onClick={() => void review(item.id, 'confirmed')} disabled={savingId === item.id} style={{ border: 0, borderRadius: 10, background: '#0466C8', color: '#fff', padding: '9px 12px', cursor: 'pointer' }}>ยืนยัน</button><button onClick={() => void review(item.id, 'rejected')} disabled={savingId === item.id} style={{ border: '1px solid #DDE3EC', borderRadius: 10, background: '#fff', color: '#33415C', padding: '9px 12px', cursor: 'pointer' }}>ไม่ยืนยัน</button></> : <span style={{ fontSize: 12, fontWeight: 700, color: item.status === 'confirmed' ? '#0353A4' : '#5C677D' }}>{item.status === 'confirmed' ? 'ยืนยันแล้ว' : 'ไม่ยืนยัน'}</span>}
+          </div>
+        ))}
+      </section>
+      <section className="admin-list">
+        <div style={{ padding: 16, borderBottom: '1px solid #E8EDF4' }}><b>ประวัติการปฏิบัติงานล่าสุด</b><div style={{ color: '#5C677D', fontSize: 12 }}>บันทึกเฉพาะการเปลี่ยนสถานะ ไม่เก็บเบอร์โทรหรือเอกสารส่วนตัวใน audit</div></div>
+        {!audit.length ? <div style={{ padding: 16, color: '#5C677D', fontSize: 13 }}>ยังไม่มีรายการหลังติดตั้ง migration นี้</div> : audit.map((item) => <div className="admin-row" key={item.id} style={{ borderBottom: '1px solid #E8EDF4', display: 'flex', justifyContent: 'space-between', gap: 12 }}><div><b>{item.action}</b><div style={{ color: '#5C677D', fontSize: 12 }}>{item.entity_type} · {item.actor?.full_name ?? 'ระบบ/ไม่ระบุตัวตน'}</div></div><time style={{ color: '#7D8597', fontSize: 11, whiteSpace: 'nowrap' }}>{new Intl.DateTimeFormat('th-TH', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(item.created_at))}</time></div>)}
+      </section>
+    </div>
   );
 }
 
