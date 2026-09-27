@@ -1362,12 +1362,13 @@ function CompensationTab() {
   const updateStatus = async (id: string, status: DamageReport['status'], reason?: string) => {
     setSavingId(id);
     try {
-      const { error } = await supabase.rpc('admin_update_damage_report_status', {
-        p_report_id: id,
-        p_status: status,
-        p_reason: reason?.trim() || null,
+      const response = await fetch('/api/admin/compensation-status', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ reportId: id, status, reason: reason?.trim() || null }),
       });
-      if (error) throw error;
+      const result = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? 'บันทึกสถานะไม่สำเร็จ');
       setClaims(prev => prev.map(c => c.id === id ? { ...c, status } : c));
       setSelectedClaim(prev => prev?.id === id ? { ...prev, status } : prev);
     } catch (err: any) {
@@ -1573,16 +1574,21 @@ function ClaimDetailPanel({ claim, saving, onStatusChange, onClose }: { claim: D
     let active = true;
     const loadHistory = async () => {
       const { data, error } = await supabase
-        .from('damage_report_status_audit')
-        .select('id, old_status, new_status, reason, created_at, actor:profiles!damage_report_status_audit_actor_id_fkey(full_name)')
-        .eq('damage_report_id', claim.id)
+        .from('operation_audit_logs')
+        .select('id, before_data, after_data, created_at, actor:profiles(full_name)')
+        .eq('entity_type', 'damage_reports')
+        .eq('entity_id', claim.id)
         .order('created_at', { ascending: false });
       if (!active) return;
       if (error) {
         setHistoryError(error.message);
         return;
       }
-      setHistory((data as unknown as ClaimStatusAudit[]) ?? []);
+      setHistory((data ?? []).map((item) => {
+        const before = item.before_data as { status?: DamageReport['status'] } | null;
+        const after = item.after_data as { status?: DamageReport['status']; reason?: string | null } | null;
+        return { id: item.id, old_status: before?.status ?? claim.status, new_status: after?.status ?? claim.status, reason: after?.reason ?? null, created_at: item.created_at, actor: item.actor };
+      }) as ClaimStatusAudit[]);
       setHistoryError(null);
     };
     void loadHistory();

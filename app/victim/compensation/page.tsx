@@ -40,6 +40,7 @@ interface DamageReport {
   registered_resident?: boolean | null;
   rental_agreement_image_url?: string | null;
   house_registration_image_url?: string | null;
+  damage_type?: string | null;
   claim_category?: ClaimCategory | null;
   housing_tenure?: string | null;
   farmer_registered_before_disaster?: boolean | null;
@@ -184,7 +185,7 @@ export default function CompensationPage() {
         if (sos) {
           base = {
             fullName: sos.full_name, ...splitFullName(sos.full_name), phone: sos.phone, province: sos.province, district: sos.district,
-            subDistrict: sos.sub_district ?? '', addressDetails: sos.address_details ?? '',
+            subDistrict: sos.sub_district ?? '', ...addressFromSos(sos.address_details ?? ''),
           };
           setLookupName(sos.full_name);
           setLookupPhone(sos.phone);
@@ -270,7 +271,7 @@ export default function CompensationPage() {
     const canApply = (sos.status === 'rescued' || sos.status === 'closed') && hasReachedEligibleDestination(destination);
     saveSosSession(sos.id, sos.phone);
     setLookupName(sos.full_name); setLookupPhone(sos.phone); setLookupTerm(sos.phone); setLookupResults([]);
-    setDraft(current => ({ ...current, fullName: sos.full_name, ...splitFullName(sos.full_name), phone: sos.phone, province: sos.province, district: sos.district, subDistrict: sos.sub_district ?? '', addressDetails: sos.address_details ?? '' }));
+    setDraft(current => ({ ...current, fullName: sos.full_name, ...splitFullName(sos.full_name), phone: sos.phone, province: sos.province, district: sos.district, subDistrict: sos.sub_district ?? '', ...addressFromSos(sos.address_details ?? '') }));
     await loadClaims(sos.phone);
     setEligible(canApply); setLoading(false); setScreen('home');
   };
@@ -314,6 +315,19 @@ export default function CompensationPage() {
     const message = validateAll(draft, { idCardFile, bankBookFile, rentalAgreementFile, houseRegistrationFile, damageFiles });
     if (message) { setError(message); return; }
     try {
+      if (draft.category === 'housing_property') {
+        const address = formattedAddress(draft);
+        let duplicateQuery = supabase.from('damage_reports').select('id')
+          .eq('province', draft.province.trim())
+          .eq('district', draft.district.trim())
+          .eq('sub_district', draft.subDistrict.trim())
+          .eq('address_details', address)
+          .in('damage_type', ['housing', 'property']);
+        if (draft.editingId) duplicateQuery = duplicateQuery.neq('id', draft.editingId);
+        const { data: existing, error: duplicateError } = await duplicateQuery.limit(1);
+        if (duplicateError) throw duplicateError;
+        if (existing?.length) throw new Error('ที่อยู่นี้มีผู้ยื่นคำร้องด้านที่อยู่อาศัยแล้ว บ้านหนึ่งหลังยื่นได้หนึ่งคน');
+      }
       [idCardFile, bankBookFile, ...damageFiles].filter((file): file is File => file !== null).forEach(validateImage);
       if (rentalAgreementFile) validateDocument(rentalAgreementFile);
       if (houseRegistrationFile) validateDocument(houseRegistrationFile);
@@ -350,7 +364,28 @@ export default function CompensationPage() {
       const query = draft.editingId
         ? supabase.from('damage_reports').update(payload).eq('id', draft.editingId).select('*').single()
         : supabase.from('damage_reports').insert(payload).select('*').single();
-      const { data, error: submitError } = await query;
+      let { data, error: submitError } = await query;
+      // Some deployed databases predate the structured compensation columns.
+      // Preserve both claim types with their original table fields instead of
+      // blocking submission or requiring the assessor to run another migration.
+      if (submitError && needsLegacyCompensationFallback(submitError)) {
+        const attachmentUrls = [
+          ...imageUrls, bankBookUrl, rentalAgreementUrl, houseRegistrationUrl,
+        ].filter((value): value is string => Boolean(value));
+        const legacyPayload = {
+          sos_report_id: getSosReportId(), full_name: fullNameOf(draft), phone: normalizePhone(draft.phone),
+          province: draft.province.trim(), district: draft.district.trim(), sub_district: draft.subDistrict.trim(),
+          address_details: formattedAddress(draft), damage_type: draft.category === 'housing_property' ? 'housing' : 'agriculture',
+          damage_value: nullableNumber(draft.damageValue),
+          description: legacyClaimDescription(draft), image_urls: attachmentUrls,
+          home_status: draft.category === 'housing_property' ? draft.homeStatus : null,
+          incident_date: draft.incidentDate, id_card_number: draft.idCardNumber,
+          id_card_image_url: idCardUrl, victim_confirmed: true, victim_confirmed_at: new Date().toISOString(), status: 'pending' as const,
+        };
+        ({ data, error: submitError } = draft.editingId
+          ? await supabase.from('damage_reports').update(legacyPayload).eq('id', draft.editingId).select('*').single()
+          : await supabase.from('damage_reports').insert(legacyPayload).select('*').single());
+      }
       if (submitError) throw submitError;
       localStorage.removeItem(DRAFT_KEY); await clearDraftFiles(); setHasCachedDraft(false);
       await loadClaims(draft.phone); setSelected(data as DamageReport); setScreen('done');
@@ -423,13 +458,15 @@ function ApplicantStep({ draft, setDraft, provinces, districts, subDistricts }: 
   const updateName = (firstName: string, lastName: string) => update({ firstName, lastName, fullName: [firstName, lastName].filter(Boolean).join(' ') });
   const today = new Date().toISOString().slice(0, 10);
   const days = damageDays(draft.incidentDate, draft.damageEndDate);
+  const homeAddressFromSos = draft.category === 'housing_property' && Boolean(draft.houseNumber || draft.addressDetails);
   return <div className={styles.stepPage}>
     <PageHeading icon={<UserRound />} title="ข้อมูลผู้ยื่นและสถานที่เสียหาย" description="ใช้ที่อยู่แบบแยกส่วนเพื่อช่วยตรวจสอบข้อมูลซ้ำ" />
     <div className={styles.threeCols}><Field label="ชื่อ"><input value={draft.firstName} onChange={e => updateName(e.target.value, draft.lastName)} /></Field><Field label="นามสกุล"><input value={draft.lastName} onChange={e => updateName(draft.firstName, e.target.value)} /></Field><Field label="เบอร์โทรศัพท์"><input type="tel" inputMode="numeric" maxLength={10} value={draft.phone} onChange={e => update({ phone:e.target.value.replace(/\D/g,'').slice(0,10) })} /></Field></div>
     <Field label="เลขบัตรประชาชน 13 หลัก"><input inputMode="numeric" maxLength={13} value={draft.idCardNumber} onChange={e => update({ idCardNumber:e.target.value.replace(/\D/g,'').slice(0,13) })} /></Field>
-    <div className={styles.threeCols}><Field label="จังหวัด"><select value={draft.province} onChange={e => setProvince(e.target.value)}><option value="">เลือกจังหวัด</option>{provinces.map(value => <option key={value} value={value}>{value}</option>)}</select></Field><Field label="อำเภอ/เขต"><select disabled={!draft.province} value={draft.district} onChange={e => setDistrict(e.target.value)}><option value="">เลือกอำเภอ/เขต</option>{districts.map(value => <option key={value} value={value}>{value}</option>)}</select></Field><Field label="ตำบล/แขวง"><select disabled={!draft.district} value={draft.subDistrict} onChange={e => setSubDistrict(e.target.value)}><option value="">เลือกตำบล/แขวง</option>{subDistricts.map(value => <option key={value} value={value}>{value}</option>)}</select></Field></div>
-    <div className={styles.threeCols}><Field label="บ้านเลขที่"><input value={draft.houseNumber} onChange={e => update({ houseNumber:e.target.value })} /></Field><Field label="หมู่ที่"><input inputMode="numeric" value={draft.villageNo} onChange={e => update({ villageNo:e.target.value.replace(/\D/g,'') })} /></Field><Field label="ซอย"><input value={draft.soi} onChange={e => update({ soi:e.target.value })} /></Field></div>
-    <div className={styles.twoCols}><Field label="รหัสไปรษณีย์"><input inputMode="numeric" maxLength={5} value={draft.postalCode} onChange={e => update({ postalCode:e.target.value.replace(/\D/g,'').slice(0,5) })} /></Field><Field label={draft.category === 'housing_property' ? 'ถนน / จุดสังเกตเพิ่มเติม' : 'รายละเอียดที่ตั้งพื้นที่เสียหาย'}><input value={draft.addressDetails} onChange={e => update({ addressDetails:e.target.value })} /></Field></div>
+    {homeAddressFromSos && <div className={styles.rule}><ShieldCheck size={18} /><span>ที่อยู่บ้านอ้างอิงจากคำขอความช่วยเหลือเดิม เพื่อป้องกันการยื่นซ้ำ บ้านหนึ่งหลังยื่นได้หนึ่งคน</span></div>}
+    <div className={styles.threeCols}><Field label="จังหวัด"><select disabled={homeAddressFromSos} value={draft.province} onChange={e => setProvince(e.target.value)}><option value="">เลือกจังหวัด</option>{provinces.map(value => <option key={value} value={value}>{value}</option>)}</select></Field><Field label="อำเภอ/เขต"><select disabled={homeAddressFromSos || !draft.province} value={draft.district} onChange={e => setDistrict(e.target.value)}><option value="">เลือกอำเภอ/เขต</option>{districts.map(value => <option key={value} value={value}>{value}</option>)}</select></Field><Field label="ตำบล/แขวง"><select disabled={homeAddressFromSos || !draft.district} value={draft.subDistrict} onChange={e => setSubDistrict(e.target.value)}><option value="">เลือกตำบล/แขวง</option>{subDistricts.map(value => <option key={value} value={value}>{value}</option>)}</select></Field></div>
+    <div className={styles.threeCols}><Field label="บ้านเลขที่"><input disabled={homeAddressFromSos} value={draft.houseNumber} onChange={e => update({ houseNumber:e.target.value })} /></Field><Field label="หมู่ที่"><input disabled={homeAddressFromSos} inputMode="numeric" value={draft.villageNo} onChange={e => update({ villageNo:e.target.value.replace(/\D/g,'') })} /></Field><Field label="ซอย"><input disabled={homeAddressFromSos} value={draft.soi} onChange={e => update({ soi:e.target.value })} /></Field></div>
+    <div className={styles.twoCols}><Field label="รหัสไปรษณีย์"><input inputMode="numeric" maxLength={5} value={draft.postalCode} onChange={e => update({ postalCode:e.target.value.replace(/\D/g,'').slice(0,5) })} /></Field><Field label={draft.category === 'housing_property' ? 'ถนน / จุดสังเกตเพิ่มเติม' : 'รายละเอียดที่ตั้งพื้นที่เสียหาย'}><input disabled={homeAddressFromSos} value={draft.addressDetails} onChange={e => update({ addressDetails:e.target.value })} /></Field></div>
     <div className={styles.twoCols}><Field label="เริ่มได้รับความเสียหาย"><input type="date" max={today} value={draft.incidentDate} onChange={e => update({ incidentDate:e.target.value, damageEndDate: draft.damageEndDate || e.target.value })} /></Field><Field label="สิ้นสุดวันที่"><input type="date" min={draft.incidentDate || undefined} max={today} value={draft.damageEndDate} onChange={e => update({ damageEndDate:e.target.value })} /></Field></div>
     {days > 0 && <div className={styles.rule}><ShieldCheck size={18} /><span>ระบบคำนวณช่วงความเสียหาย: <strong>{days} วัน</strong> (นับรวมวันเริ่มต้นและวันสิ้นสุด)</span></div>}
   </div>;
@@ -524,12 +561,32 @@ function validateAll(d:Draft,files:{idCardFile:File|null;bankBookFile:File|null;
 function validateImage(file:File){if(file.size<=0)throw new Error('ไฟล์ไม่มีข้อมูล กรุณาเลือกไฟล์ใหม่อีกครั้ง');if(!['image/jpeg','image/png','image/webp'].includes(file.type))throw new Error('รองรับเฉพาะ JPG, PNG และ WEBP');if(file.size>MAX_FILE_SIZE)throw new Error('แต่ละรูปต้องไม่เกิน 8 MB');}
 function validateDocument(file:File){if(file.size<=0)throw new Error('ไฟล์ไม่มีข้อมูล กรุณาเลือกไฟล์ใหม่อีกครั้ง');if(!['image/jpeg','image/png','image/webp','application/pdf'].includes(file.type))throw new Error('รองรับ JPG, PNG, WEBP และ PDF');if(file.size>MAX_FILE_SIZE)throw new Error('แต่ละไฟล์ต้องไม่เกิน 8 MB');}
 async function uploadFile(file:File,prefix:'idcard'|'bankbook'|'damage'|'rental'|'house-registration',isDocument=false){if(isDocument)validateDocument(file);else validateImage(file);const ext=file.name.split('.').pop()?.toLowerCase()||'jpg';const path=`${prefix}/${Date.now()}-${crypto.randomUUID()}.${ext}`;const{error}=await supabase.storage.from('damage-photos').upload(path,file,{contentType:file.type,upsert:false});if(error)throw error;return{path,url:supabase.storage.from('damage-photos').getPublicUrl(path).data.publicUrl};}
-function getCategory(report:DamageReport):ClaimCategory{return report.claim_category||(report.agriculture_damage_types?.length||report.farmer_registered_before_disaster?'agriculture_livelihood':'housing_property');}
+function getCategory(report:DamageReport):ClaimCategory{return report.claim_category||(report.damage_type==='agriculture'||report.agriculture_damage_types?.length||report.farmer_registered_before_disaster?'agriculture_livelihood':'housing_property');}
 function normalizePhone(value:string){return value.replace(/\D/g,'').slice(0,10);}
 function unique(values:string[]){return [...new Set(values)].sort((a,b)=>a.localeCompare(b,'th'));}
 function splitFullName(value:string){const [firstName='',...rest]=value.trim().split(/\s+/);return{firstName,lastName:rest.join(' ')};}
 function fullNameOf(d:Draft){return[d.firstName.trim(),d.lastName.trim()].filter(Boolean).join(' ');}
 function formattedAddress(d:Draft){return[`บ้านเลขที่ ${d.houseNumber.trim()}`,d.villageNo.trim()?`หมู่ ${d.villageNo.trim()}`:'',d.soi.trim()?`ซอย ${d.soi.trim()}`:'',d.addressDetails.trim()].filter(Boolean).join(' ');}
+function addressFromSos(address:string):Partial<Draft>{
+  const value=address.trim();
+  const house=value.match(/บ้านเลขที่\s*([^\s,·]+)/)?.[1]??'';
+  const village=value.match(/หมู่\s*(\d+)/)?.[1]??'';
+  const soi=value.match(/ซอย\s*([^,·]+)/)?.[1]?.trim()??'';
+  const remaining=value
+    .replace(/บ้านเลขที่\s*[^\s,·]+/,'')
+    .replace(/หมู่\s*\d+/,'')
+    .replace(/ซอย\s*[^,·]+/,'')
+    .replace(/^[\s,·-]+|[\s,·-]+$/g,'');
+  return {houseNumber:house,villageNo:village,soi,addressDetails:remaining};
+}
+function legacyClaimDescription(d:Draft){
+  const category=d.category==='agriculture_livelihood'?'คำร้องด้านการประกอบอาชีพ':'คำร้องด้านที่อยู่อาศัยและทรัพย์สิน';
+  const detail=d.category==='agriculture_livelihood'
+    ? `ขึ้นทะเบียนเกษตรกรก่อนเกิดภัย: ${d.farmerRegistered?'ใช่':'ไม่ใช่'}; ประเภท: ${d.agricultureDamageTypes.join(', ')||'-'}; พืชผล ${d.cropAreaRai||0} ไร่; ประมง ${d.fisheryAreaRai||0} ไร่; ปศุสัตว์ ${d.livestockCount||0} ตัว`
+    : `ความเกี่ยวข้องกับบ้าน: ${tenureLabel(d.housingTenure)}; สถานะที่อยู่อาศัย: ${d.homeStatus||'-'}`;
+  return [d.description.trim(),category,detail].filter(Boolean).join('\n');
+}
+function needsLegacyCompensationFallback(cause:unknown){const error=cause as {code?:string;message?:string};const message=error.message?.toLowerCase()??'';return error.code==='PGRST204'||message.includes('schema cache')||message.includes('column')&&message.includes('does not exist');}
 function damageDays(start:string,end:string){if(!start||!end)return 0;const diff=Math.floor((new Date(`${end}T00:00:00`).getTime()-new Date(`${start}T00:00:00`).getTime())/86400000);return diff>=0?diff+1:0;}
 function nullableNumber(value:string){return value===''?null:Number(value);}
 function numberString(value:number|null|undefined){return value==null?'':String(value);}
