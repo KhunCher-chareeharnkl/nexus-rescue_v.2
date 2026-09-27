@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { PROJECT_NAME } from '@/lib/brand';
+import { BrandLogo } from '@/components/brand-logo';
 
 interface Profile {
   id: string;
@@ -584,9 +585,7 @@ export default function AdminPage() {
         <header className="admin-header" style={{ background: '#fff', borderBottom: '1px solid #DDE3EC', padding: '14px 20px', position: 'sticky', top: 0, zIndex: 50 }}>
           <div className="admin-header-inner" style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div className="admin-brand" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div className="admin-brand-mark" style={{ width: 40, height: 40, borderRadius: 11, background: 'linear-gradient(135deg,#023E7D,#001845)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>
-                🛡️
-              </div>
+              <div className="admin-brand-mark" style={{ width: 40, height: 40, borderRadius: 11, overflow: 'hidden' }}><BrandLogo size={40} priority /></div>
               <div>
                 <div className="admin-brand-title" style={{ fontSize: 15, fontWeight: 700, color: '#001845' }}>{PROJECT_NAME}</div>
                 <div className="admin-brand-user" style={{ fontSize: 11, color: '#7D8597' }}>{profile.full_name}</div>

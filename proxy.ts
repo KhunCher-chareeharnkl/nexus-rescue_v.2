@@ -52,6 +52,41 @@ export async function proxy(request: NextRequest) {
     return response;
   }
 
+  if (isProtectedRoute) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role,shelter_id,is_active')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    const isActive = Boolean(profile?.is_active);
+    const role = profile?.role;
+    const shelterId = profile?.shelter_id;
+    const adminUrl = new URL('/officer/admin', request.url);
+    const dashboardUrl = new URL('/officer/dashboard', request.url);
+
+    if (pathname.startsWith('/officer/admin') && (!isActive || role !== 'admin')) {
+      return copyResponseCookies(
+        response,
+        NextResponse.redirect(isActive && role === 'shelter_staff' && shelterId
+          ? new URL(`/officer/shelter/${shelterId}`, request.url)
+          : dashboardUrl),
+      );
+    }
+
+    if (pathname.startsWith('/officer/dashboard') && isActive && role === 'admin') {
+      return copyResponseCookies(response, NextResponse.redirect(adminUrl));
+    }
+
+    if (pathname.startsWith('/officer/dashboard') && isActive && role === 'shelter_staff' && shelterId) {
+      return copyResponseCookies(response, NextResponse.redirect(new URL(`/officer/shelter/${shelterId}`, request.url)));
+    }
+
+    if (pathname.startsWith('/officer/shelter') && (!isActive || (role !== 'admin' && role !== 'shelter_staff'))) {
+      return copyResponseCookies(response, NextResponse.redirect(dashboardUrl));
+    }
+  }
+
   if (isLoginPage) {
     return copyResponseCookies(
       response,

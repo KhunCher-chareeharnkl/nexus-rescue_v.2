@@ -60,7 +60,13 @@ export function PwaRegister() {
 
     const register = async () => {
       try {
-        const registration = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+        const registration = await navigator.serviceWorker.register("/sw.js", {
+          scope: "/",
+          // Always revalidate the worker script when an installed app opens.
+          // This avoids Android retaining an old PWA shell after a deployment.
+          updateViaCache: "none",
+        });
+        void registration.update();
         setPushRegistration(registration);
         if ('Notification' in window && 'PushManager' in window) setPushPermission(Notification.permission);
 

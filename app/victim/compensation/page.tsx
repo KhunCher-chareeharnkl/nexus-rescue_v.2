@@ -9,6 +9,7 @@ import {
   Search, ShieldCheck, Sprout, Trash2, Upload, UserRound, WalletCards,
 } from 'lucide-react';
 import { PROJECT_NAME } from '@/lib/brand';
+import { BrandLogo } from '@/components/brand-logo';
 import { getSavedPhone, getSosReportId, saveSosSession } from '@/lib/session';
 import { supabase } from '@/lib/supabase';
 import thaiAddressData from '@riz007/thai-address-data';
@@ -411,7 +412,7 @@ export default function CompensationPage() {
 
   return (
     <main className={styles.page}>
-      <header className={styles.topbar}><button onClick={() => screen === 'home' ? router.push('/') : setScreen('home')}><ArrowLeft size={19} /><span>ย้อนกลับ</span></button><div><ShieldCheck size={18} /><span>{PROJECT_NAME}</span></div><span className={styles.secure}><ShieldCheck size={14} /> ปกป้องข้อมูล</span></header>
+      <header className={styles.topbar}><button onClick={() => screen === 'home' ? router.push('/') : setScreen('home')}><ArrowLeft size={19} /><span>ย้อนกลับ</span></button><div><span style={{ width: 24, height: 24, overflow: 'hidden', borderRadius: 7 }}><BrandLogo size={24} priority /></span><span>{PROJECT_NAME}</span></div><span className={styles.secure}><ShieldCheck size={14} /> ปกป้องข้อมูล</span></header>
       <div className={styles.shell}>
         <section className={styles.hero}><small>COMPENSATION SERVICE</small><h1>สำรวจความเสียหายและยื่นเยียวยา</h1><p>ทำทีละขั้น ตรวจสอบย้อนหลัง และกลับมาแก้ไขได้โดยไม่ต้องกรอกใหม่ทั้งหมด</p></section>
 

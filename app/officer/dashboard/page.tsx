@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { PROJECT_NAME } from '@/lib/brand';
+import { BrandLogo } from '@/components/brand-logo';
 
 interface SOSReport {
   id: string;
@@ -897,12 +898,7 @@ export default function OfficerDashboard() {
         <header style={{ background: '#fff', borderBottom: '1px solid #ECEEF5', padding: '14px 20px', position: 'sticky', top: 0, zIndex: 50 }}>
           <div style={{ maxWidth: 960, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div className="rescue-header-mark" style={{ width: 40, height: 40, borderRadius: 11, background: 'linear-gradient(135deg,#6D5EF9,#5046e5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                  <path d="M12 2L4 5v6c0 5.5 3.8 10.7 8 12 4.2-1.3 8-6.5 8-12V5L12 2z" fill="rgba(255,255,255,0.2)" stroke="white" strokeWidth="1.5"/>
-                  <path d="M9 12l2 2 4-4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </div>
+              <div className="rescue-header-mark" style={{ width: 40, height: 40, borderRadius: 11, overflow: 'hidden' }}><BrandLogo size={40} priority /></div>
               <div>
                 <div className="rescue-header-title" style={{ fontSize: 15, fontWeight: 700, color: '#111827' }}>{PROJECT_NAME}</div>
                 <div className="rescue-header-user" style={{ fontSize: 11, color: '#9CA3AF' }}>{profile?.full_name} · {profile?.agency ?? 'ไม่ระบุหน่วยงาน'}</div>

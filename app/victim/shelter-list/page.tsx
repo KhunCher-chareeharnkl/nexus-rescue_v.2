@@ -6,7 +6,6 @@ import {
   ArrowLeft,
   Building2,
   ChevronRight,
-  Home,
   MapPin,
   Navigation,
   Phone,
@@ -16,6 +15,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { PROJECT_NAME } from '@/lib/brand';
+import { BrandLogo } from '@/components/brand-logo';
 
 type Shelter = {
   id: string;
@@ -117,7 +117,7 @@ export default function ShelterListPage() {
               <ArrowLeft size={18} strokeWidth={2} />
             </button>
             <div className="shelter-brand">
-              <span className="shelter-brand-mark"><Home size={17} strokeWidth={2.2} /></span>
+              <span className="shelter-brand-mark"><BrandLogo size={36} priority /></span>
               <span>
                 <strong>{PROJECT_NAME}</strong>
                 <small>ศูนย์พักพิงและจุดช่วยเหลือ</small>

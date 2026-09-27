@@ -21,12 +21,12 @@ import {
   Pencil,
   RefreshCw,
   Search,
-  ShieldCheck,
   Truck,
   Users,
   X,
 } from 'lucide-react';
 import { PROJECT_NAME } from '@/lib/brand';
+import { BrandLogo } from '@/components/brand-logo';
 import { supabase } from '@/lib/supabase';
 import styles from './page.module.css';
 
@@ -722,7 +722,7 @@ export default function ShelterStaffDashboard({ view = 'dashboard' }: { view?: '
   return (
     <div className={styles.shell}>
       <aside className={styles.rail} aria-label="เมนูศูนย์พักพิง">
-        <button className={styles.railBrand} onClick={() => router.push(dashboardPath)} aria-label="ไปหน้าแดชบอร์ด"><ShieldCheck size={23} /></button>
+        <button className={styles.railBrand} onClick={() => router.push(dashboardPath)} aria-label="ไปหน้าแดชบอร์ด"><BrandLogo size={38} priority /></button>
         <nav>
           <button className={!isOccupantsPage ? styles.railActive : ''} onClick={() => router.push(dashboardPath)} aria-label="ภาพรวม"><LayoutDashboard size={19} /><span>ภาพรวม</span></button>
           <button className={isOccupantsPage && tab === 'in_shelter' ? styles.railActive : ''} onClick={() => goToOccupants('in_shelter')} aria-label="ผู้พักพิงปัจจุบัน"><Users size={19} /><span>ผู้พักพิง</span></button>

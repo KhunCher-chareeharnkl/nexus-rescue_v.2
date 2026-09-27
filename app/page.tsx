@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { LucideIcon } from 'lucide-react';
+import { BrandLogo } from '@/components/brand-logo';
 import { PROJECT_NAME } from '@/lib/brand';
 import { supabase } from '@/lib/supabase';
 import {
@@ -13,7 +14,6 @@ import {
   Home as HomeIcon,
   LogIn,
   Radio,
-  ShieldCheck,
   Siren,
   Wallet,
 } from 'lucide-react';
@@ -81,9 +81,7 @@ export default function HomePage() {
 
         <header className="home-header">
           <div className="home-brand">
-            <div className="home-brand-mark" aria-hidden="true">
-              <ShieldCheck size={21} strokeWidth={2.2} />
-            </div>
+            <div className="home-brand-mark" aria-hidden="true"><BrandLogo size={44} priority /></div>
             <div>
               <div className="home-brand-name">{PROJECT_NAME}</div>
               <div className="home-brand-subtitle">ช่วยเหลือรวดเร็ว ติดตามสถานะได้ทุกขั้นตอน</div>
@@ -289,11 +287,9 @@ const HOME_STYLES = `
   .home-brand-mark {
     width:44px;
     height:44px;
-    display:grid;
-    place-items:center;
+    overflow:hidden;
     border-radius:15px;
-    color:#fff;
-    background:linear-gradient(145deg,var(--blue),var(--blue-deep));
+    background:#061f58;
     box-shadow:0 9px 24px rgba(4,102,200,.2);
   }
   .home-brand-name { max-width:390px; font-size:15px; line-height:1.3; font-weight:800; letter-spacing:-.02em; }

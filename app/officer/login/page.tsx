@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
+import { BrandLogo } from '@/components/brand-logo';
 import {
   ArrowLeft,
   ArrowRight,
@@ -14,7 +15,6 @@ import {
   LockKeyhole,
   Mail,
   Search,
-  ShieldCheck,
   Siren,
   UserCog,
 } from 'lucide-react';
@@ -128,19 +128,38 @@ export default function OfficerLogin() {
     setLoading(true);
     setMessage(null);
 
-    if (role !== 'admin') {
-      const { error: redeemError } = await supabase.rpc('redeem_access_code', {
-        p_email: email,
-        p_code: code,
-        p_role: role,
-        p_shelter_id: role === 'shelter_staff' ? shelterId : null,
+    if (role === 'admin') {
+      const response = await fetch('/api/auth/admin-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
       });
+      const result = await response.json().catch(() => ({}));
 
-      if (redeemError) {
-        setLoading(false);
-        setMessage({ type: 'error', text: redeemError.message });
+      setLoading(false);
+      if (!response.ok) {
+        setMessage({ type: 'error', text: result.error || 'ไม่สามารถตรวจสอบสิทธิ์ผู้ดูแลระบบได้' });
         return;
       }
+
+      setMessage({
+        type: 'success',
+        text: 'ส่งลิงก์เข้าสู่ระบบไปยังอีเมลแล้ว กรุณาเปิดลิงก์เพื่อเข้าสู่หน้าแอดมิน',
+      });
+      return;
+    }
+
+    const { error: redeemError } = await supabase.rpc('redeem_access_code', {
+      p_email: email,
+      p_code: code,
+      p_role: role,
+      p_shelter_id: role === 'shelter_staff' ? shelterId : null,
+    });
+
+    if (redeemError) {
+      setLoading(false);
+      setMessage({ type: 'error', text: redeemError.message });
+      return;
     }
 
     const { error: otpError } = await supabase.auth.signInWithOtp({
@@ -179,7 +198,7 @@ export default function OfficerLogin() {
         <section className="login-shell">
           <div className="login-visual">
             <div className="login-visual-brand">
-              <span><ShieldCheck size={19} /></span>
+              <span><BrandLogo size={36} priority /></span>
               <strong>{PROJECT_NAME}</strong>
             </div>
 

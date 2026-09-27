@@ -1,9 +1,15 @@
-const STATIC_CACHE = "nexus-rescue-static-v3";
+// Bump this whenever the PWA shell/manifest changes so installed Android apps
+// discard the previous shell rather than continuing to open an old release.
+const STATIC_CACHE = "nexus-rescue-static-v5";
 const OFFLINE_PAGE = "/offline.html";
 const APP_SHELLS = ["/", "/victim/dashboard"];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(STATIC_CACHE).then((cache) => cache.addAll([OFFLINE_PAGE, ...APP_SHELLS])));
+  event.waitUntil(
+    caches.open(STATIC_CACHE)
+      .then((cache) => cache.addAll([OFFLINE_PAGE, ...APP_SHELLS]))
+      .then(() => self.skipWaiting()),
+  );
 });
 
 self.addEventListener("activate", (event) => {
@@ -25,8 +31,8 @@ self.addEventListener("push", (event) => {
   const title = payload.title || "Nexus Rescue";
   event.waitUntil(self.registration.showNotification(title, {
     body: payload.body || "มีรายการใหม่ที่ต้องตรวจสอบ",
-    icon: "/icon-192.png",
-    badge: "/icon-192.png",
+    icon: "/brand-logo.png",
+    badge: "/brand-logo.png",
     tag: payload.tag || "nexus-rescue",
     data: { url: payload.url || "/officer/dashboard" },
   }));

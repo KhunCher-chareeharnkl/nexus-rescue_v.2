@@ -3,9 +3,11 @@ import type { MetadataRoute } from "next";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: "/",
-    name: "Nexus Rescue | ระบบประสานงานกู้ภัย",
-    short_name: "Nexus Rescue",
-    description: "แพลตฟอร์มประสานงานกู้ภัยและติดตามความช่วยเหลือผู้ประสบภัย",
+    // Android uses this value on its installed-app splash screen. Newlines
+    // intentionally keep the project name and its purpose readable on phones.
+    name: "NEXUS RESCUE\nแพลตฟอร์มประสานงานกู้ภัย\nและติดตามช่วยเหลือผู้ประสบภัย",
+    short_name: "NEXUS RESCUE",
+    description: "แพลตฟอร์มประสานงานกู้ภัยและติดตามช่วยเหลือผู้ประสบภัย",
     start_url: "/",
     scope: "/",
     display: "standalone",
@@ -14,14 +16,14 @@ export default function manifest(): MetadataRoute.Manifest {
     lang: "th",
     icons: [
       {
-        src: "/icon",
-        sizes: "512x512",
+        src: "/brand-logo.png",
+        sizes: "2000x2000",
         type: "image/png",
         purpose: "any",
       },
       {
-        src: "/icon",
-        sizes: "512x512",
+        src: "/brand-logo.png",
+        sizes: "2000x2000",
         type: "image/png",
         purpose: "maskable",
       },
