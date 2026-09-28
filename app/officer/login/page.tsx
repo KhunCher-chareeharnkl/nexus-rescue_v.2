@@ -136,30 +136,26 @@ export default function OfficerLogin() {
       });
       const result = await response.json().catch(() => ({}));
 
-      setLoading(false);
       if (!response.ok) {
+        setLoading(false);
         setMessage({ type: 'error', text: result.error || 'ไม่สามารถตรวจสอบสิทธิ์ผู้ดูแลระบบได้' });
         return;
       }
-
-      setMessage({
-        type: 'success',
-        text: 'ส่งลิงก์เข้าสู่ระบบไปยังอีเมลแล้ว กรุณาเปิดลิงก์เพื่อเข้าสู่หน้าแอดมิน',
-      });
-      return;
     }
 
-    const { error: redeemError } = await supabase.rpc('redeem_access_code', {
-      p_email: email,
-      p_code: code,
-      p_role: role,
-      p_shelter_id: role === 'shelter_staff' ? shelterId : null,
-    });
+    if (role !== 'admin') {
+      const { error: redeemError } = await supabase.rpc('redeem_access_code', {
+        p_email: email,
+        p_code: code,
+        p_role: role,
+        p_shelter_id: role === 'shelter_staff' ? shelterId : null,
+      });
 
-    if (redeemError) {
-      setLoading(false);
-      setMessage({ type: 'error', text: redeemError.message });
-      return;
+      if (redeemError) {
+        setLoading(false);
+        setMessage({ type: 'error', text: redeemError.message });
+        return;
+      }
     }
 
     const { error: otpError } = await supabase.auth.signInWithOtp({
