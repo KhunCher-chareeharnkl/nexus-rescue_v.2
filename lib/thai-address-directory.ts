@@ -17,6 +17,12 @@ type DirectoryRow = {
   zip_code?: string | null;
 };
 
+// Supabase projects commonly cap a REST response at 1,000 rows. The address
+// directory has several thousand subdistricts, so one request would silently
+// omit later provinces (including Songkhla) and replace the complete fallback.
+const DIRECTORY_PAGE_SIZE = 1_000;
+const MAX_DIRECTORY_PAGES = 20;
+
 function unique(values: string[]) {
   return [...new Set(values)].sort((a, b) => a.localeCompare(b, 'th'));
 }
@@ -33,12 +39,31 @@ export function useThaiAddressDirectory(fallbackRows: ThaiAddressRow[]) {
   useEffect(() => {
     let active = true;
     const load = async () => {
-      const { data, error } = await supabase
-        .from('thai_address_directory')
-        .select('province,district,sub_district,zip_code')
-        .limit(10000);
-      if (!active || error || !data?.length) return;
-      const normalized = (data as DirectoryRow[])
+      const directoryRows: DirectoryRow[] = [];
+
+      for (let page = 0; page < MAX_DIRECTORY_PAGES; page += 1) {
+        const from = page * DIRECTORY_PAGE_SIZE;
+        const { data, error } = await supabase
+          .from('thai_address_directory')
+          .select('province,district,sub_district,zip_code')
+          .order('province', { ascending: true })
+          .order('district', { ascending: true })
+          .order('sub_district', { ascending: true })
+          .range(from, from + DIRECTORY_PAGE_SIZE - 1);
+
+        // Keep the complete bundled directory if a page cannot be read. Never
+        // replace it with a partial database response.
+        if (!active || error) return;
+        if (!data?.length) {
+          if (!directoryRows.length) return;
+          break;
+        }
+        directoryRows.push(...(data as DirectoryRow[]));
+        if (data.length < DIRECTORY_PAGE_SIZE) break;
+      }
+
+      if (!active) return;
+      const normalized = directoryRows
         .filter((item) => item.province && item.district && item.sub_district)
         .map((item) => ({ province: item.province, district: item.district, subdistrict: item.sub_district, zip_code: item.zip_code }));
       if (normalized.length) {
