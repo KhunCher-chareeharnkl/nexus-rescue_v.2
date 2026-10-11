@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { getSavedPhone, saveSosSession } from '@/lib/session';
+import VictimRescuerMapModal from '@/components/victim-rescuer-map-modal';
 
 type SosReport = {
   id: string;
@@ -93,6 +94,7 @@ export default function StatusTracker({
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState('');
+  const [showRescuerMap, setShowRescuerMap] = useState(false);
 
   useEffect(() => {
     if (initialPhone) return;
@@ -287,6 +289,7 @@ export default function StatusTracker({
                 {report.special_needs && <div className="important"><dt><AlertCircle size={14} /> หมายเหตุสำคัญ</dt><dd>{report.special_needs}</dd></div>}
               </dl>
               <button className="status-refresh" onClick={() => fetchReport(searchPhone)} disabled={loading}><RefreshCw size={14} /> อัปเดตสถานะอีกครั้ง</button>
+              {report.status === 'assigned' && <button className="status-refresh" type="button" onClick={() => setShowRescuerMap(true)} style={{ marginTop: 9, color: '#0353A4', borderColor: '#B8CEE4', background: '#F1F6FC' }}><MapPin size={14} /> ดูตำแหน่งทีมกู้ภัย</button>}
             </aside>
           </div>
           {canRequestCompensation && (
@@ -296,6 +299,7 @@ export default function StatusTracker({
               <button type="button" onClick={openCompensation}>เริ่มยื่นเยียวยา</button>
             </section>
           )}
+          {showRescuerMap && <VictimRescuerMapModal reportId={report.id} phone={searchPhone} onClose={() => setShowRescuerMap(false)} />}
         </div>
       )}
 

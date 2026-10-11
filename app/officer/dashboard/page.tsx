@@ -64,6 +64,12 @@ interface MyActiveAssignmentRow {
   status: string;
 }
 
+interface PendingDispatch {
+  sos_report_id: string;
+  respond_by: string;
+  estimated_arrival_minutes: number | null;
+}
+
 type AgeGroup = 'adult' | 'child' | 'elder';
 type ExceptionDisposition = 'hospital' | 'deceased' | 'other_safe';
 
@@ -197,6 +203,8 @@ export default function OfficerDashboard() {
   const router = useRouter();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [myCoords, setMyCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [availability, setAvailability] = useState<'available' | 'busy' | 'offline'>('offline');
+  const [pendingDispatches, setPendingDispatches] = useState<Record<string, PendingDispatch>>({});
   const [reports, setReports] = useState<SOSReport[]>([]);
   const [filterStatus, setFilterStatus] = useState<string>('active');
   const [filterDistrict, setFilterDistrict] = useState<string>('all');
@@ -287,6 +295,15 @@ export default function OfficerDashboard() {
 
       setProfile(resolvedProfile);
 
+      const { data: presence } = await supabase
+        .from('rescuer_presence')
+        .select('availability')
+        .eq('rescuer_id', user.id)
+        .maybeSingle();
+      if (presence?.availability === 'available' || presence?.availability === 'busy') {
+        setAvailability(presence.availability);
+      }
+
       navigator.geolocation?.getCurrentPosition(
         ({ coords }) => setMyCoords({ lat: coords.latitude, lng: coords.longitude }),
         () => {}
@@ -294,6 +311,27 @@ export default function OfficerDashboard() {
     };
     init();
   }, [router]);
+
+  // Location is shared only while the rescuer explicitly opts into dispatch.
+  // The database rejects stale locations after two minutes, so this watcher
+  // keeps the dispatcher's candidate list trustworthy without exposing it to peers.
+  useEffect(() => {
+    if (!profile || availability !== 'available' || !navigator.geolocation) return;
+
+    const publish = ({ coords }: GeolocationPosition) => {
+      const location = { lat: coords.latitude, lng: coords.longitude };
+      setMyCoords(location);
+      void supabase.rpc('set_rescuer_presence', {
+        p_availability: 'available', p_latitude: location.lat, p_longitude: location.lng,
+      });
+    };
+    const watchId = navigator.geolocation.watchPosition(publish, () => {}, {
+      enableHighAccuracy: true,
+      maximumAge: 30_000,
+      timeout: 15_000,
+    });
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [availability, profile]);
 
   useEffect(() => {
     if (!profile) return;
@@ -325,6 +363,27 @@ export default function OfficerDashboard() {
       }
     };
 
+    const fetchPendingDispatches = async () => {
+      const { data, error } = await supabase.rpc('get_my_pending_rescue_dispatches');
+      if (error) return;
+      const next: Record<string, PendingDispatch> = {};
+      (data as PendingDispatch[] ?? []).forEach((dispatch) => {
+        next[dispatch.sos_report_id] = dispatch;
+      });
+      setPendingDispatches(next);
+    };
+
+    const fetchMyAvailability = async () => {
+      const { data } = await supabase
+        .from('rescuer_presence')
+        .select('availability')
+        .eq('rescuer_id', profile.id)
+        .maybeSingle();
+      if (data?.availability === 'available' || data?.availability === 'busy' || data?.availability === 'offline') {
+        setAvailability(data.availability);
+      }
+    };
+
     const fetchShelters = async () => {
       const { data } = await supabase
         .from('shelters').select('id, name, address, province, capacity, current_occupancy')
@@ -335,6 +394,8 @@ export default function OfficerDashboard() {
     const refreshDashboard = () => {
       void fetchReports();
       void fetchJobStages();
+      void fetchPendingDispatches();
+      void fetchMyAvailability();
       void fetchShelters();
     };
 
@@ -409,6 +470,8 @@ export default function OfficerDashboard() {
     };
   }, [profile]);
 
+  // Kept for backwards-compatible databases until the automatic-dispatch migration is deployed.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const acceptJob = async (reportId: string) => {
     if (!profile) return;
     setActionLoading(reportId);
@@ -429,6 +492,66 @@ export default function OfficerDashboard() {
 
     } catch (err: any) {
       alert(`รับงานไม่สำเร็จ: ${err.message}`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const changeAvailability = async (next: 'available' | 'offline') => {
+    if (!profile) return;
+    let location = myCoords;
+    if (next === 'available' && !location && navigator.geolocation) {
+      try {
+        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true, maximumAge: 10_000, timeout: 15_000,
+          });
+        });
+        location = { lat: position.coords.latitude, lng: position.coords.longitude };
+        setMyCoords(location);
+      } catch {
+        alert('กรุณาอนุญาตตำแหน่งปัจจุบันก่อนเปิดรับงาน');
+        return;
+      }
+    }
+    setActionLoading('availability');
+    try {
+      const { error } = await supabase.rpc('set_rescuer_presence', {
+        p_availability: next,
+        p_latitude: location?.lat ?? null,
+        p_longitude: location?.lng ?? null,
+      });
+      if (error) throw error;
+      setAvailability(next);
+    } catch (error: unknown) {
+      alert(`อัปเดตสถานะไม่สำเร็จ: ${error instanceof Error ? error.message : 'เกิดข้อผิดพลาด'}`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const respondToDispatch = async (reportId: string, accept: boolean) => {
+    setActionLoading(reportId);
+    try {
+      const { data, error } = await supabase.rpc('respond_to_rescue_dispatch', {
+        p_sos_report_id: reportId,
+        p_accept: accept,
+        p_reason: accept ? null : 'rescuer_declined',
+      });
+      if (error) throw error;
+      setPendingDispatches(current => {
+        const next = { ...current };
+        delete next[reportId];
+        return next;
+      });
+      if (data?.accepted) {
+        setAvailability('busy');
+        setNavigatingId(reportId);
+        setReports(current => current.map(report => report.id === reportId ? { ...report, status: 'assigned' } : report));
+        if (profile) setActiveAssignments(current => ({ ...current, [reportId]: { rescuerId: profile.id, status: 'accepted' } }));
+      }
+    } catch (error: unknown) {
+      alert(`ตอบรับภารกิจไม่สำเร็จ: ${error instanceof Error ? error.message : 'เกิดข้อผิดพลาด'}`);
     } finally {
       setActionLoading(null);
     }
@@ -905,10 +1028,15 @@ export default function OfficerDashboard() {
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div className="rescue-online" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#22C55E', fontWeight: 600 }}>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#22C55E', display: 'inline-block', animation: 'ping 2s infinite' }} />
-                ออนไลน์
-              </div>
+              <button
+                type="button"
+                onClick={() => void changeAvailability(availability === 'available' ? 'offline' : 'available')}
+                disabled={availability === 'busy' || actionLoading === 'availability'}
+                title={availability === 'busy' ? 'กำลังปฏิบัติภารกิจอยู่' : 'เปลี่ยนสถานะการรับงาน'}
+                style={{ padding: '7px 10px', borderRadius: 10, border: '1px solid #ECEEF5', background: availability === 'available' ? '#EAF8F0' : '#F8FAFC', color: availability === 'available' ? '#19744B' : '#6B7280', fontSize: 12, fontWeight: 700, cursor: availability === 'busy' ? 'not-allowed' : 'pointer' }}
+              >
+                {availability === 'available' ? '● พร้อมรับงาน' : availability === 'busy' ? '● กำลังปฏิบัติภารกิจ' : '○ ไม่พร้อมรับงาน'}
+              </button>
               <button className="rescue-logout" onClick={handleLogout} style={{ padding: '7px 14px', borderRadius: 10, border: '1px solid #ECEEF5', background: '#fff', fontSize: 13, fontWeight: 600, color: '#6B7280', cursor: 'pointer' }}>
                 ออกจากระบบ
               </button>
@@ -1093,6 +1221,10 @@ export default function OfficerDashboard() {
         const activeAssignment = activeAssignments[item.id];
         const stage = activeAssignment?.status;
         const isMyAssignment = activeAssignment?.rescuerId === profile?.id;
+        const pendingDispatch = pendingDispatches[item.id];
+        const responseDeadline = pendingDispatch
+          ? new Date(pendingDispatch.respond_by).toLocaleTimeString('th-TH')
+          : '';
         const totalPeople = (item.adult_count ?? 0) + (item.child_count ?? 0) + (item.elder_count ?? 0);
 
         return (
@@ -1122,10 +1254,18 @@ export default function OfficerDashboard() {
                   </button>
                 )}
 
-                {item.status === 'pending' && (
-                  <button className="mission-modal-primary" type="button" onClick={() => acceptJob(item.id)} disabled={isLoading}>
-                    {isLoading ? 'กำลังรับงาน...' : 'รับงานนี้'}
-                  </button>
+                {pendingDispatch && (
+                  <div className="mission-modal-actions" style={{ border: '1px solid #B8CEE4', borderRadius: 12, padding: 12, background: '#F2F7FC' }}>
+                    <div className="mission-stage">ระบบมอบหมายภารกิจนี้ให้คุณ — ยืนยันก่อน {responseDeadline}{pendingDispatch.estimated_arrival_minutes ? ` · ETA ประมาณ ${pendingDispatch.estimated_arrival_minutes} นาที` : ''}</div>
+                    <div className="mission-stage-buttons" style={{ gridTemplateColumns: '1fr 1fr' }}>
+                      <button type="button" onClick={() => void respondToDispatch(item.id, false)} disabled={isLoading}>ปฏิเสธ</button>
+                      <button type="button" onClick={() => void respondToDispatch(item.id, true)} disabled={isLoading} style={{ background: '#0466C8', color: '#fff' }}>ยืนยันรับภารกิจ</button>
+                    </div>
+                  </div>
+                )}
+
+                {(item.status === 'pending' || item.status === 'cannot_reach') && !pendingDispatch && (
+                  <div className="mission-stage">ระบบกำลังค้นหาทีมที่พร้อมและอยู่ใกล้ที่สุด</div>
                 )}
 
                 {item.status === 'assigned' && isMyAssignment && (
@@ -1148,9 +1288,6 @@ export default function OfficerDashboard() {
                   <div className="mission-stage">ภารกิจนี้อยู่ระหว่างดำเนินการโดยทีมกู้ภัยอื่น</div>
                 )}
 
-                {item.status === 'cannot_reach' && (
-                  <button className="mission-modal-primary" type="button" onClick={() => acceptJob(item.id)} disabled={isLoading}>ลองเข้าพื้นที่ใหม่</button>
-                )}
               </div>
             </section>
           </div>

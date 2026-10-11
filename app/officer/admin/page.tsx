@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { PROJECT_NAME } from '@/lib/brand';
 import { BrandLogo } from '@/components/brand-logo';
+import AdminRescuerMapPanel from '@/components/admin-rescuer-map-panel';
 
 interface Profile {
   id: string;
@@ -90,9 +91,10 @@ interface ClaimStatusAudit {
 
 const ADMIN_PAGE_SIZE = 25;
 
-type Tab = 'overview' | 'users' | 'shelters' | 'victims' | 'compensation' | 'governance';
+type Tab = 'overview' | 'rescue_map' | 'users' | 'shelters' | 'victims' | 'compensation' | 'governance';
 
 const TAB_META: Record<Tab, { title: string; description: string }> = {
+  rescue_map: { title: 'แผนที่ทีมกู้ภัย', description: 'ติดตามตำแหน่งล่าสุดของทีมกู้ภัยที่กำลังแชร์ตำแหน่ง' },
   overview: { title: 'ภาพรวมระบบ', description: 'ติดตามสถานการณ์และข้อมูลสำคัญแบบเรียลไทม์' },
   users: { title: 'ผู้ใช้งาน', description: 'จัดการบทบาท สิทธิ์ และสถานะของเจ้าหน้าที่' },
   shelters: { title: 'ศูนย์พักพิง', description: 'ดูแลข้อมูล ความจุ และสถานะของศูนย์พักพิง' },
@@ -129,6 +131,13 @@ const SOS_STATUS_LABEL: Record<string, { text: string; color: string; bg: string
   rescued: { text: 'ช่วยเหลือสำเร็จ', color: '#0353A4', bg: '#E5EFF9' },
   cannot_reach: { text: 'เข้าไม่ถึง', color: '#001845', bg: '#E8EBF0' },
   closed: { text: 'ปิดเคส', color: '#33415C', bg: '#EEF0F4' },
+};
+
+const URGENCY_LABEL: Record<string, { text: string; color: string; bg: string }> = {
+  critical: { text: 'วิกฤต', color: '#B42318', bg: '#FEE4E2' },
+  high: { text: 'เร่งด่วน', color: '#C2410C', bg: '#FFF0E5' },
+  medium: { text: 'ปานกลาง', color: '#A16207', bg: '#FFF7D6' },
+  low: { text: 'ทั่วไป', color: '#047857', bg: '#E8F8F0' },
 };
 
 const inputStyle: React.CSSProperties = {
@@ -499,7 +508,12 @@ export default function AdminPage() {
         .admin-list { background:var(--surface) !important; border:1px solid var(--line) !important; border-radius:18px !important; box-shadow:0 9px 24px rgba(23,52,60,.045); overflow:hidden; }
         .admin-row { padding:16px !important; transition:background .18s ease; }
         .admin-row:hover { background:#F5F8FC; }
-        .admin-victim-row { display:grid !important; grid-template-columns:minmax(0,1fr) auto auto; align-items:center !important; gap:12px !important; }
+        .admin-victim-row { position:relative; display:grid !important; grid-template-columns:minmax(0,1fr) auto auto auto; align-items:center !important; gap:9px !important; border-left:6px solid #94A3B8 !important; }
+        .admin-victim-row.urgency-critical { border-left-color:#D92D20 !important; background:#FFF8F7; }
+        .admin-victim-row.urgency-high { border-left-color:#F97316 !important; background:#FFF9F5; }
+        .admin-victim-row.urgency-medium { border-left-color:#EAB308 !important; background:#FFFDF4; }
+        .admin-victim-row.urgency-low { border-left-color:#10B981 !important; }
+        .admin-victim-row .victim-severity-badge,.admin-victim-row .victim-status-badge { display:inline-flex; align-items:center; justify-content:center; min-width:74px; white-space:nowrap; }
         .admin-victim-row-copy { min-width:0; }
         .admin-victim-row-copy > div { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .admin-claim-row { display:grid !important; grid-template-columns:minmax(0,1fr) auto auto; align-items:center !important; gap:12px !important; }
@@ -579,6 +593,7 @@ export default function AdminPage() {
         @media(max-width:900px){.admin-layout{padding:22px 20px 42px !important}.admin-page-heading{margin-top:0}}
         @media(max-width:720px){.admin-header{padding:0 15px !important}.admin-header-inner{grid-template-columns:1fr auto;gap:8px;padding-top:8px}.admin-brand{min-height:52px}.admin-top-nav{grid-column:1/-1;grid-row:2;padding:6px 0 10px;justify-content:flex-start}.admin-logout{grid-column:2;grid-row:1}.admin-layout{padding:20px 13px 36px !important}.overview-hero{grid-template-columns:1fr;padding:24px;gap:22px}.overview-grid,.overview-bottom{gap:13px;margin-top:13px}.flow-row{grid-template-columns:78px minmax(0,1fr) 28px}.claim-legend{grid-template-columns:repeat(2,1fr)}.admin-date{display:none}.admin-victim-row,.admin-claim-row{grid-template-columns:minmax(0,1fr) auto !important}.admin-victim-row > button,.admin-claim-row > button{grid-column:1/-1;width:100%}.admin-victim-row-copy > div,.admin-claim-row-copy > div{white-space:normal}}
         @media(max-width:480px){.admin-brand-user{max-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.admin-logout{padding:8px 9px !important;font-size:0 !important}.admin-logout span{font-size:14px}.admin-page-heading{align-items:flex-start}.admin-page-heading h1{font-size:24px}.overview-hero-numbers{grid-template-columns:1fr 1fr}.workforce-list{grid-template-columns:1fr;gap:12px}.workforce-item{padding:10px 0 0;border:0;border-top:1px solid rgba(255,255,255,.16)}.workforce-item:first-child{padding-top:0;border:0}.admin-summary-grid,.admin-status-grid{grid-template-columns:repeat(2,minmax(0,1fr)) !important}.admin-toolbar input,.admin-toolbar select{max-width:none !important;width:100% !important}.admin-row{align-items:flex-start !important}.admin-panel [style*='repeat(3']{grid-template-columns:1fr !important}}
+        @media(max-width:720px){.admin-victim-row{grid-template-columns:minmax(0,1fr) auto auto !important}.admin-victim-row .victim-status-badge{grid-column:2}.admin-victim-row .victim-severity-badge{grid-column:3}.admin-victim-row > button{grid-column:1/-1;width:100%}}
       `}</style>
       <div className="admin-shell" style={{ minHeight: '100vh', background: '#F5F8FC', fontFamily: "var(--font-thai), 'IBM Plex Sans Thai', sans-serif" }}>
 
@@ -598,6 +613,7 @@ export default function AdminPage() {
               <TabButton active={tab === 'victims'} onClick={() => setTab('victims')} label="ผู้ประสบภัย" />
               <TabButton active={tab === 'compensation'} onClick={() => setTab('compensation')} label="เยียวยา" />
               <TabButton active={tab === 'governance'} onClick={() => setTab('governance')} label="กำกับ" />
+              <TabButton active={tab === 'rescue_map'} onClick={() => setTab('rescue_map')} label="แผนที่กู้ภัย" />
             </nav>
             <button className="admin-logout" onClick={handleLogout} style={{ padding: '7px 14px', borderRadius: 10, border: '1px solid #DDE3EC', background: '#fff', fontSize: 13, fontWeight: 600, color: '#5C677D', cursor: 'pointer' }}>
               <span aria-hidden="true">↗</span> ออกจากระบบ
@@ -617,6 +633,7 @@ export default function AdminPage() {
             </div>
             <div className="admin-content" key={tab}>
               {tab === 'overview' && <OverviewTab />}
+              {tab === 'rescue_map' && <AdminRescuerMapPanel />}
               {tab === 'users' && <UsersTab />}
               {tab === 'shelters' && <SheltersTab />}
               {tab === 'victims' && <VictimsTab />}
@@ -1102,6 +1119,10 @@ function VictimsTab() {
   return (
     <div className="admin-panel admin-victims">
       <div className="admin-toolbar" style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+        <div aria-label="คำอธิบายระดับความเร่งด่วน" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', fontSize: 11, fontWeight: 700, color: '#475569' }}>
+          <span>ความเร่งด่วน:</span>
+          {Object.values(URGENCY_LABEL).map((urgency) => <span key={urgency.text} style={{ padding: '4px 8px', borderRadius: 999, color: urgency.color, background: urgency.bg }}>{urgency.text}</span>)}
+        </div>
         <input placeholder="🔍 ค้นหาชื่อหรือเบอร์โทร" value={search} onChange={e => setSearch(e.target.value)} style={{ ...inputStyle, maxWidth: 240 }} />
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ ...inputStyle, maxWidth: 180 }}>
           <option value="all">ทุกสถานะ</option>
@@ -1116,15 +1137,19 @@ function VictimsTab() {
           <div style={{ padding: 30, textAlign: 'center', color: '#7D8597', fontSize: 13 }}>ไม่พบข้อมูล</div>
         ) : filtered.map((r, i) => {
           const st = SOS_STATUS_LABEL[r.status] ?? SOS_STATUS_LABEL.pending;
+          const urgency = URGENCY_LABEL[r.urgency_level] ?? URGENCY_LABEL.low;
           return (
-            <div className="admin-row admin-victim-row" key={r.id} style={{ padding: 14, borderBottom: i < filtered.length - 1 ? '1px solid #E8EDF4' : 'none' }}>
+            <div className={`admin-row admin-victim-row urgency-${r.urgency_level ?? 'low'}`} key={r.id} style={{ padding: 14, borderBottom: i < filtered.length - 1 ? '1px solid #E8EDF4' : 'none' }}>
               <div className="admin-victim-row-copy">
                 <div style={{ fontSize: 13, fontWeight: 700, color: '#001845' }}>{r.full_name}</div>
                 <div style={{ fontSize: 11, color: '#7D8597' }}>
                   {r.phone} · {r.district} {r.province} · ผู้ใหญ่ {r.adult_count} เด็ก {r.child_count} สูงอายุ {r.elder_count}
                 </div>
               </div>
-              <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 999, color: st.color, background: st.bg }}>
+              <span className="victim-severity-badge" style={{ fontSize: 11, fontWeight: 800, padding: '5px 10px', borderRadius: 999, color: urgency.color, background: urgency.bg }}>
+                {urgency.text}
+              </span>
+              <span className="victim-status-badge" style={{ fontSize: 11, fontWeight: 800, padding: '5px 10px', borderRadius: 999, color: st.color, background: st.bg }}>
                 {st.text}
               </span>
               <button type="button" onClick={() => setSelectedReport(r)} style={{ padding: '8px 11px', border: '1px solid #BAD4EE', borderRadius: 10, color: '#0466C8', background: '#F5FAFF', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>ดูรายละเอียด</button>
