@@ -317,21 +317,34 @@ export default function OfficerDashboard() {
         .select('availability')
         .eq('rescuer_id', user.id)
         .maybeSingle();
-      if (presence?.availability === 'available' || presence?.availability === 'busy') {
-        setAvailability(presence.availability);
+      const savedAvailability = presence?.availability === 'available' || presence?.availability === 'busy'
+        ? presence.availability
+        : 'offline';
+      if (savedAvailability !== 'offline') {
+        setAvailability(savedAvailability);
       }
 
       navigator.geolocation?.getCurrentPosition(
-        ({ coords }) => setMyCoords({ lat: coords.latitude, lng: coords.longitude }),
+        ({ coords }) => {
+          const location = { lat: coords.latitude, lng: coords.longitude };
+          setMyCoords(location);
+          // Save a consented starting point at sign-in. This keeps the admin
+          // map useful before the rescuer opts into automatic dispatch.
+          void supabase.rpc('set_rescuer_presence', {
+            p_availability: savedAvailability,
+            p_latitude: location.lat,
+            p_longitude: location.lng,
+          });
+        },
         () => {}
       );
     };
     init();
   }, [router]);
 
-  // Location is shared only while the rescuer explicitly opts into dispatch.
-  // The database rejects stale locations after two minutes, so this watcher
-  // keeps the dispatcher's candidate list trustworthy without exposing it to peers.
+  // A starting point is saved after sign-in; live updates run only while the
+  // rescuer explicitly opts into dispatch. The database rejects stale points
+  // for automatic assignment after two minutes.
   useEffect(() => {
     if (!profile || availability !== 'available' || !navigator.geolocation) return;
 

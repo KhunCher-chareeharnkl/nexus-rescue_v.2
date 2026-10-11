@@ -21,6 +21,17 @@ type LocationRow = {
   assignment_status: string | null;
 };
 
+function getMapErrorMessage(error: { code?: string; message?: string; hint?: string }) {
+  const message = error.message ?? '';
+  if (error.code === 'PGRST202' || message.includes('get_admin_rescuer_locations')) {
+    return 'ยังไม่ได้ติดตั้งฐานข้อมูลแผนที่กู้ภัย กรุณารัน migration 202610110001_rescuer_location_map_access.sql ใน Supabase SQL Editor';
+  }
+  if (error.code === '42501' || message.includes('Admin access required')) {
+    return 'บัญชีนี้ไม่มีสิทธิ์ดูตำแหน่งกู้ภัย';
+  }
+  return message || error.hint || 'ไม่สามารถโหลดตำแหน่งกู้ภัยได้';
+}
+
 export default function AdminRescuerMapPanel() {
   const [locations, setLocations] = useState<LocationRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -30,7 +41,7 @@ export default function AdminRescuerMapPanel() {
     const load = async () => {
       const { data, error: fetchError } = await supabase.rpc('get_admin_rescuer_locations');
       if (fetchError) {
-        setError('ไม่สามารถโหลดตำแหน่งกู้ภัยได้');
+        setError(getMapErrorMessage(fetchError));
       } else {
         setLocations((data as LocationRow[]) ?? []);
         setError('');
