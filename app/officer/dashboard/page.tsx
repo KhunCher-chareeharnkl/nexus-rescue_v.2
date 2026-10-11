@@ -160,6 +160,23 @@ const STATUS_LABEL: Record<string, string> = {
   closed: 'ปิดเคส',
 };
 
+function getPresenceErrorMessage(error: unknown) {
+  const supabaseError = error as { code?: string; message?: string; hint?: string } | null;
+  const message = supabaseError?.message ?? '';
+
+  if (supabaseError?.code === 'PGRST202' || message.includes('set_rescuer_presence')) {
+    return 'ยังไม่ได้ติดตั้งระบบสถานะกู้ภัย กรุณารัน migration 202610100001_automatic_rescue_dispatch.sql ใน Supabase SQL Editor';
+  }
+  if (supabaseError?.code === '42501' || message.includes('Only active rescuers')) {
+    return 'บัญชีนี้ยังไม่ได้เป็นกู้ภัยที่เปิดใช้งาน กรุณาให้แอดมินตรวจ role = rescuer และ is_active = true';
+  }
+  if (supabaseError?.code === '22023' || message.includes('current location')) {
+    return 'ต้องอนุญาตตำแหน่ง GPS ปัจจุบันก่อนเปิดรับงาน';
+  }
+
+  return message || supabaseError?.hint || 'เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล';
+}
+
 const getCoordinates = (lat?: number | null, lng?: number | null) => (
   typeof lat === 'number' && Number.isFinite(lat) && typeof lng === 'number' && Number.isFinite(lng)
     ? { lat, lng }
@@ -524,7 +541,7 @@ export default function OfficerDashboard() {
       if (error) throw error;
       setAvailability(next);
     } catch (error: unknown) {
-      alert(`อัปเดตสถานะไม่สำเร็จ: ${error instanceof Error ? error.message : 'เกิดข้อผิดพลาด'}`);
+      alert(`อัปเดตสถานะไม่สำเร็จ: ${getPresenceErrorMessage(error)}`);
     } finally {
       setActionLoading(null);
     }
@@ -1013,6 +1030,7 @@ export default function OfficerDashboard() {
         .mission-open{min-width:0;display:flex;align-items:center;padding:17px 12px 17px 20px;border:0;color:var(--ink);background:transparent;font:inherit;text-align:left;cursor:pointer}.mission-name{min-width:0}.mission-name strong{display:block;overflow:hidden;font-size:16px;text-overflow:ellipsis;white-space:nowrap}.mission-map{margin:8px;display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid #B8CEE4;border-radius:12px;color:var(--blue-strong);background:#F2F7FC;font:700 13px/1 inherit;cursor:pointer}.mission-map:hover{color:#fff;background:var(--blue)}.mission-map:disabled{color:var(--pale);border-color:var(--line);background:#F1F3F6;cursor:not-allowed}.mission-empty{padding:60px 20px;text-align:center;color:var(--muted);font-size:15px}
         .mission-modal-backdrop{--blue:#0466C8;--blue-strong:#0353A4;--blue-deep:#023E7D;--navy:#002855;--ink:#001845;--midnight:#001233;--slate:#33415C;--muted:#7D8597;--line:#DDE3EC;position:fixed;inset:0;z-index:110;display:grid;place-items:center;padding:20px;background:rgba(0,18,51,.58);backdrop-filter:blur(7px)}.mission-modal{position:relative;width:min(100%,620px);max-height:min(88vh,760px);overflow:auto;border:1px solid rgba(255,255,255,.13);border-radius:25px;background:#fff;box-shadow:0 28px 80px rgba(0,18,51,.28);animation:rise-in .25s ease}.mission-modal-close{position:absolute;z-index:3;right:14px;top:14px;width:38px;height:38px;border:1px solid rgba(255,255,255,.25);border-radius:12px;color:#fff;background:rgba(255,255,255,.12);font:500 24px/1 inherit;cursor:pointer}.mission-modal-hero{padding:27px 64px 24px 25px;color:#fff;background:linear-gradient(135deg,#002855,#023E7D)}.mission-modal-kicker{color:#A9CDEC;font-size:12px;font-weight:750;letter-spacing:.08em}.mission-modal h2{margin:7px 0 3px;color:#fff!important;font-size:25px}.mission-modal-hero p{color:rgba(255,255,255,.72);font-size:14px}.mission-modal-body{display:grid;gap:13px;padding:21px}.mission-modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.mission-modal-grid>div{padding:12px;border:1px solid var(--line);border-radius:12px;background:#F8FAFD}.mission-modal-grid .wide{grid-column:1/-1}.mission-modal-grid .important{border-left:3px solid var(--blue);background:#EAF3FC}.mission-modal-grid span,.mission-modal-grid strong,.mission-modal-grid small{display:block}.mission-modal-grid span{color:var(--muted);font-size:13px}.mission-modal-grid strong{margin-top:3px;color:var(--slate);font-size:15px;line-height:1.5}.mission-modal-grid small{margin-top:2px;color:var(--muted);font-size:13px}.mission-modal-map,.mission-modal-primary{min-height:48px;border-radius:12px;font:750 14px/1 inherit;cursor:pointer}.mission-modal-map{border:1px solid #B8CEE4;color:var(--blue);background:#F1F6FC}.mission-modal-primary{border:0;color:#fff;background:linear-gradient(135deg,var(--blue),var(--blue-strong));box-shadow:0 7px 17px rgba(4,102,200,.17)}.mission-modal-primary.dark{background:var(--midnight)}.mission-modal-actions{display:grid;gap:9px}.mission-stage{padding:11px;border-radius:11px;color:var(--blue-deep);background:#EAF3FC;text-align:center;font-size:14px;font-weight:700}.mission-stage-buttons{display:grid;grid-template-columns:1fr;gap:8px}.mission-stage-buttons button{min-height:46px;border:1px solid var(--line);border-radius:11px;color:var(--slate);background:#F5F8FC;font:700 14px/1 inherit;cursor:pointer}.mission-stage-complete{display:grid;place-items:center;min-height:44px;border-radius:11px;color:#0353A4;background:#EAF3FC;font-size:14px;font-weight:750}
         .outcome-backdrop{align-items:center!important;padding:20px}.outcome-sheet{border-radius:22px!important;max-width:540px!important;max-height:88vh!important;box-shadow:0 25px 70px rgba(0,18,51,.3)!important}.outcome-sheet input,.outcome-sheet select,.outcome-sheet textarea,.outcome-sheet button{font-size:14px!important}.outcome-sheet [style*="font-size: 10"],.outcome-sheet [style*="font-size: 11"],.outcome-sheet [style*="font-size: 12"]{font-size:13px!important}
+        .mission-meta{display:flex;align-items:center;gap:6px;margin-top:6px}.mission-priority,.mission-status{display:inline-flex;align-items:center;padding:3px 7px;border-radius:999px;font-size:11px;font-weight:800;line-height:1}.mission-priority.urgency-critical{color:#B42318;background:#FEE4E2}.mission-priority.urgency-high{color:#C2410C;background:#FFF0E5}.mission-priority.urgency-medium{color:#A16207;background:#FFF7D6}.mission-priority.urgency-low{color:#047857;background:#E8F8F0}.mission-status.status-pending{color:#9A3412;background:#FFF1E8}.mission-status.status-assigned{color:#1D4ED8;background:#EAF2FF}.mission-status.status-rescued{color:#047857;background:#E8F8F0}.mission-status.status-cannot_reach{color:#A16207;background:#FFF7D6}.mission-status.status-closed{color:#475569;background:#EEF2F6}
         @media(max-width:760px){.rescue-app{padding-left:0;padding-bottom:0}.rescue-app>header{padding:13px 14px!important}.rescue-app>header>div>div:last-child{gap:7px!important}.rescue-app>header button{padding:8px 9px!important;font-size:12px!important}.dashboard-overview{grid-template-columns:1fr}.operation-hero{min-height:192px;padding:22px}.rescue-app main{padding:17px 13px 28px!important}.filter-label{width:100%;margin:0 4px 2px}.district-filter{margin-left:0!important;width:100%}.mission-row{grid-template-columns:minmax(0,1fr) 86px}.mission-open{padding-left:16px}.mission-map{font-size:12px}.mission-modal-backdrop{padding:11px}.mission-modal{max-height:92vh;border-radius:20px}.mission-modal-grid{grid-template-columns:1fr}.mission-modal-grid .wide{grid-column:auto}}
       `}</style>
 
@@ -1189,6 +1207,10 @@ export default function OfficerDashboard() {
                     <button className="mission-open" type="button" onClick={() => setSelectedReportId(item.id)} aria-label={`ดูรายละเอียด ${item.full_name} ระดับความรุนแรง ${URGENCY_LABEL[item.urgency_level]}`}>
                       <span className="mission-name">
                         <strong>{item.full_name}</strong>
+                        <span className="mission-meta">
+                          <span className={`mission-priority urgency-${item.urgency_level}`}>{URGENCY_LABEL[item.urgency_level] ?? 'ทั่วไป'}</span>
+                          <span className={`mission-status status-${item.status}`}>{STATUS_LABEL[item.status] ?? item.status}</span>
+                        </span>
                       </span>
                     </button>
                     <button
