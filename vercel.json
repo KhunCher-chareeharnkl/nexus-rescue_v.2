@@ -1,6 +1,5 @@
 {
   "crons": [
-    { "path": "/api/dispatch/sweep", "schedule": "* * * * *" },
     { "path": "/api/push/dispatch", "schedule": "0 3 * * *" },
     { "path": "/api/address-sync", "schedule": "0 2 * * *" }
   ]
