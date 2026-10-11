@@ -29,13 +29,13 @@ begin
   return query
   select
     p.id,
-    p.full_name,
-    p.agency,
-    rp.availability,
+    p.full_name::text,
+    p.agency::text,
+    rp.availability::text,
     rp.latitude,
     rp.longitude,
     rp.location_updated_at,
-    active.status
+    active.status::text
   from public.rescuer_presence rp
   join public.profiles p on p.id = rp.rescuer_id
   left join lateral (
@@ -83,8 +83,8 @@ begin
 
   return query
   select
-    coalesce(nullif(btrim(p.agency), ''), 'ทีมกู้ภัยที่ได้รับมอบหมาย'),
-    a.status,
+    coalesce(nullif(btrim(p.agency), ''), 'ทีมกู้ภัยที่ได้รับมอบหมาย')::text,
+    a.status::text,
     rp.latitude,
     rp.longitude,
     rp.location_updated_at
