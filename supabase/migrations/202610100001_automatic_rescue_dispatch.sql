@@ -50,32 +50,6 @@ create index if not exists rescuer_presence_available_idx
 create index if not exists rescuer_service_areas_coverage_idx
   on public.rescuer_service_areas (province, district, rescuer_id);
 
--- Earlier installations use an enum for assignments.status. Add the new
--- automatic-dispatch states before constraints, indexes, or functions refer
--- to them. This must be its own committed statement: PostgreSQL does not let
--- a newly-added enum value be used until its transaction has committed.
-do $$
-declare
-  v_status text;
-begin
-  if to_regtype('public.assignment_status') is null then
-    return;
-  end if;
-
-  foreach v_status in array array['offered', 'declined', 'expired']
-  loop
-    if not exists (
-      select 1
-      from pg_enum enum_value
-      where enum_value.enumtypid = 'public.assignment_status'::regtype
-        and enum_value.enumlabel = v_status
-    ) then
-      execute format('alter type public.assignment_status add value %L', v_status);
-    end if;
-  end loop;
-end;
-$$;
-
 -- The original check predates automatic offers. Replace only the status-domain
 -- check, preserving constraints such as the one that requires a reason for a
 -- cannot_reach outcome.
