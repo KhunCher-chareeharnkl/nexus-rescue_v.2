@@ -237,6 +237,7 @@ export default function OfficerDashboard() {
   // ข้อมูล modal "ยืนยันผลการช่วยเหลือ" ที่กำลังเปิดอยู่ (null = ปิดอยู่)
   const [outcomeDraft, setOutcomeDraft] = useState<OutcomeDraft | null>(null);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+  const [promptedDispatchId, setPromptedDispatchId] = useState<string | null>(null);
   const [outcomeSaving, setOutcomeSaving] = useState(false);
   // ข้อความแจ้งปัญหาสิทธิ์การเข้าใช้งาน (role/ศูนย์ยังไม่ถูกตั้งค่า) — โชว์ตรงๆ แทนการเด้งกลับ login แบบเงียบๆ
   // เพราะเคยทำให้ผู้ใช้เข้าใจผิดว่า session หลุด ทั้งที่จริงยัง login ค้างอยู่
@@ -499,6 +500,20 @@ export default function OfficerDashboard() {
       supabase.removeChannel(shelterChannel);
     };
   }, [profile]);
+
+  // Open an offered mission without requiring the rescuer to find it in the
+  // queue. Polling above refreshes pendingDispatches every three seconds.
+  useEffect(() => {
+    const nextOfferId = Object.keys(pendingDispatches).find((reportId) => reports.some((report) => report.id === reportId));
+    if (!nextOfferId) {
+      setPromptedDispatchId(null);
+      return;
+    }
+    if (nextOfferId !== promptedDispatchId) {
+      setSelectedReportId(nextOfferId);
+      setPromptedDispatchId(nextOfferId);
+    }
+  }, [pendingDispatches, promptedDispatchId, reports]);
 
   // Kept for backwards-compatible databases until the automatic-dispatch migration is deployed.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
