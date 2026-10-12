@@ -173,6 +173,9 @@ function getPresenceErrorMessage(error: unknown) {
   if (supabaseError?.code === '22023' || message.includes('current location')) {
     return 'ต้องอนุญาตตำแหน่ง GPS ปัจจุบันก่อนเปิดรับงาน';
   }
+  if (supabaseError?.code === 'P0002' || message.includes('No pending dispatch')) {
+    return 'ข้อเสนอรับงานนี้หมดอายุ หรือถูกส่งต่อให้ทีมอื่นแล้ว';
+  }
 
   return message || supabaseError?.hint || 'เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล';
 }
@@ -596,7 +599,7 @@ export default function OfficerDashboard() {
         if (profile) setActiveAssignments(current => ({ ...current, [reportId]: { rescuerId: profile.id, status: 'accepted' } }));
       }
     } catch (error: unknown) {
-      alert(`ตอบรับภารกิจไม่สำเร็จ: ${error instanceof Error ? error.message : 'เกิดข้อผิดพลาด'}`);
+      alert(`ตอบรับภารกิจไม่สำเร็จ: ${getPresenceErrorMessage(error)}`);
     } finally {
       setActionLoading(null);
     }
