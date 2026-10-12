@@ -32,12 +32,12 @@ create table if not exists public.rescue_dispatch_attempts (
 -- province must never receive a case unless an administrator explicitly adds
 -- that province as one of the team's mutual-aid service areas.
 create table if not exists public.rescuer_service_areas (
+  id uuid primary key default gen_random_uuid(),
   rescuer_id uuid not null references public.profiles(id) on delete cascade,
   province text not null check (char_length(btrim(province)) > 0),
   district text,
   is_mutual_aid boolean not null default false,
-  created_at timestamptz not null default now(),
-  primary key (rescuer_id, province, district)
+  created_at timestamptz not null default now()
 );
 
 create index if not exists rescue_dispatch_attempts_case_idx
