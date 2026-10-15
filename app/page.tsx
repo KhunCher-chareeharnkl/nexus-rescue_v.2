@@ -73,40 +73,105 @@ export default function HomePage() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-5 font-sans text-slate-900 sm:px-6 lg:px-8 lg:py-7">
-      <div className="mx-auto max-w-6xl">
-        <header className="mb-8 flex items-center justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="grid size-11 shrink-0 place-items-center overflow-hidden rounded-2xl bg-[#0f172a] shadow-[0_8px_24px_rgba(15,23,42,0.14)]"><BrandLogo size={44} priority /></span>
-            <div className="min-w-0"><strong className="block truncate text-sm font-bold text-[#0f172a] sm:text-base">{PROJECT_NAME}</strong><span className="block text-xs text-slate-500">ช่วยเหลือรวดเร็ว ติดตามได้ทุกขั้นตอน</span></div>
+    <>
+      <style>{HOME_STYLES}</style>
+      <div className="home-shell">
+        <div className="home-glow home-glow-one" aria-hidden="true" />
+        <div className="home-glow home-glow-two" aria-hidden="true" />
+
+        <header className="home-header">
+          <div className="home-brand">
+            <div className="home-brand-mark" aria-hidden="true"><BrandLogo size={44} priority /></div>
+            <div>
+              <div className="home-brand-name">{PROJECT_NAME}</div>
+              <div className="home-brand-subtitle">ช่วยเหลือรวดเร็ว ติดตามสถานะได้ทุกขั้นตอน</div>
+            </div>
           </div>
-          <button className="inline-flex shrink-0 items-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-[0_8px_30px_rgba(15,23,42,0.05)] transition hover:bg-slate-100" onClick={() => router.push('/officer/login')}><LogIn size={17} /> <span className="hidden sm:inline">เจ้าหน้าที่</span></button>
+
+          <button className="home-officer-login" onClick={() => router.push('/officer/login')}>
+            <LogIn size={18} strokeWidth={2.2} />
+            <span>เข้าสู่ระบบเจ้าหน้าที่</span>
+          </button>
         </header>
 
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.02fr)_minmax(380px,.98fr)] lg:items-center">
-          <section aria-labelledby="home-heading">
-            <div className="mb-6 px-1"><p className="mb-3 flex items-center gap-2 text-xs font-bold tracking-[.14em] text-blue-700"><span className="size-2 rounded-full bg-blue-500" /> พร้อมให้บริการตลอด 24 ชั่วโมง</p><h1 id="home-heading" className="text-4xl font-bold tracking-tight text-[#0f172a] sm:text-5xl">ความช่วยเหลือ<br />เมื่อคุณต้องการ</h1><p className="mt-4 max-w-xl text-sm leading-7 text-slate-500">เลือกบริการที่ต้องการเพื่อแจ้งเหตุ ค้นหาที่พักพิง ยื่นเยียวยา หรือติดตามสถานะการช่วยเหลือได้ทันที</p></div>
-            <RoleBlock onClick={() => router.push('/victim/dashboard')} icon={AlertTriangle} eyebrow="EMERGENCY SOS" title="แจ้งขอความช่วยเหลือ" subtitle="ส่งพิกัดและรายละเอียดให้ทีมกู้ภัยเข้าประสานงาน" tone="primary" />
-            <div className="mt-4 grid gap-4 sm:grid-cols-2"><QuickBlock onClick={() => router.push('/victim/shelter-list')} icon={HomeIcon} label="ศูนย์พักพิง" description="ค้นหาพื้นที่ปลอดภัยใกล้คุณ" tone="light" /><QuickBlock onClick={() => router.push('/victim/compensation')} icon={Wallet} label="ยื่นเยียวยา" description="ส่งคำขอและเอกสารออนไลน์" tone="medium" /></div>
+        <main className="home-main">
+          <section className="home-actions" aria-labelledby="home-heading">
+            <div className="home-heading-wrap">
+              <div className="home-eyebrow"><span /> พร้อมให้บริการตลอด 24 ชั่วโมง</div>
+              <h1 id="home-heading">พร้อมช่วยเหลือ<br />ทุกสถานการณ์</h1>
+              <p>เลือกบริการที่คุณต้องการ ระบบจะพาคุณไปยังขั้นตอนที่เหมาะสมอย่างรวดเร็ว</p>
+            </div>
+
+            <div className="home-role-list">
+              <RoleBlock
+                onClick={() => router.push('/victim/dashboard')}
+                icon={AlertTriangle}
+                eyebrow="กรณีฉุกเฉิน"
+                title="ต้องการความช่วยเหลือ (SOS)"
+                subtitle="แจ้งตำแหน่งและรายละเอียด เพื่อให้เจ้าหน้าที่เข้าช่วยเหลือ"
+                tone="primary"
+              />
+            </div>
+
+            <div className="home-quick-grid">
+              <QuickBlock
+                onClick={() => router.push('/victim/shelter-list')}
+                icon={HomeIcon}
+                label="ศูนย์พักพิง"
+                description="ค้นหาศูนย์ใกล้คุณ"
+                tone="light"
+              />
+              <QuickBlock
+                onClick={() => router.push('/victim/compensation')}
+                icon={Wallet}
+                label="ยื่นเยียวยา"
+                description="ส่งคำขอและเอกสาร"
+                tone="medium"
+              />
+            </div>
           </section>
 
-          <section className="rounded-[32px] bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.05)] sm:p-7" aria-labelledby="response-heading">
-            <div className="flex items-start justify-between gap-4"><div><p className="mb-2 flex items-center gap-2 text-[11px] font-bold tracking-[.13em] text-blue-700"><Radio size={14} /> LIVE STATUS</p><h2 id="response-heading" className="text-2xl font-bold text-[#0f172a]">สถานะล่าสุด</h2><p className="mt-1 text-sm text-slate-500">ติดตามคำขอความช่วยเหลือจากระบบ</p></div><span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold ${streamState === 'live' ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'}`}><i className={`size-1.5 rounded-full ${streamState === 'live' ? 'bg-emerald-500' : 'bg-blue-500'}`} />{streamState === 'live' ? 'อัปเดตสด' : 'กำลังเชื่อมต่อ'}</span></div>
-            <div className="mt-6 flex flex-wrap gap-3 text-xs text-slate-500"><span className="inline-flex items-center gap-1.5"><i className="size-2 rounded-full bg-emerald-500" />ปลอดภัยแล้ว</span><span className="inline-flex items-center gap-1.5"><i className="size-2 rounded-full bg-blue-500" />กำลังช่วยเหลือ</span><span className="inline-flex items-center gap-1.5"><i className="size-2 rounded-full bg-rose-500" />ต้องติดตาม</span></div>
-            <div className="mt-5 max-h-[330px] space-y-3 overflow-y-auto pr-1" role="log" aria-live="polite">{streamError ? <div className="rounded-2xl bg-rose-50 p-5 text-center text-sm text-rose-700"><Siren className="mx-auto mb-2" size={22} /><strong className="block">{streamError}</strong><button className="mt-3 font-semibold underline" type="button" onClick={() => window.location.reload()}>ลองใหม่</button></div> : orderedReports.length === 0 ? <div className="rounded-2xl bg-blue-50/50 px-5 py-10 text-center text-slate-500"><Clock3 className="mx-auto mb-3 text-blue-600" size={24} /><strong className="block text-sm text-slate-700">ยังไม่มีคำขอความช่วยเหลือ</strong><span className="mt-1 block text-xs">รายการใหม่จะแสดงที่นี่ทันที</span></div> : orderedReports.map((report) => <PublicResponseItem key={report.id} report={report} />)}</div>
-            <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-5 text-xs text-slate-500"><span className="inline-flex items-center gap-1.5"><CheckCircle2 size={15} className="text-emerald-600" /> {orderedReports.length} รายการล่าสุด</span><button className="inline-flex items-center gap-1 font-semibold text-[#0f172a] transition hover:text-blue-700" onClick={() => router.push('/victim/dashboard')}>ติดตามเคส <ArrowUpRight size={15} /></button></div>
+          <section className="home-response-card" aria-labelledby="response-heading">
+            <div className="home-response-orbit home-response-orbit-one" aria-hidden="true" />
+            <div className="home-response-orbit home-response-orbit-two" aria-hidden="true" />
+            <div className="home-response-head">
+              <div>
+                <div className="home-response-eyebrow"><Radio size={14} /> LIVE ASSISTANCE STREAM</div>
+                <h2 id="response-heading">สถานะผู้ประสบภัย</h2>
+                <p>ติดตามคำขอความช่วยเหลือล่าสุดจากระบบ</p>
+              </div>
+              <span className={`home-stream-state ${streamState}`}><i />{streamState === 'live' ? 'อัปเดตสด' : streamState === 'offline' ? 'กำลังเชื่อมต่อใหม่' : 'กำลังเชื่อมต่อ'}</span>
+            </div>
+
+            <div className="home-response-legend" aria-label="คำอธิบายสีสถานะ">
+              <span className="safe"><i />ปลอดภัยแล้ว</span><span className="active"><i />กำลังช่วยเหลือ</span><span className="urgent"><i />ต้องติดตามเร่งด่วน</span>
+            </div>
+
+            <div className="home-response-scroll" role="log" aria-live="polite" aria-label="รายชื่อผู้ประสบภัยล่าสุด">
+              {streamError ? <div className="home-response-empty"><Siren size={22} /><strong>{streamError}</strong><button type="button" onClick={() => window.location.reload()}>ลองใหม่</button></div> : orderedReports.length === 0 ? <div className="home-response-empty"><Clock3 size={22} /><strong>ยังไม่มีคำขอความช่วยเหลือ</strong><span>รายการใหม่จะแสดงที่นี่ทันที</span></div> : orderedReports.map((report) => <PublicResponseItem key={report.id} report={report} />)}
+            </div>
+
+            <div className="home-response-foot">
+              <span><CheckCircle2 size={15} /> แสดง {orderedReports.length} รายการล่าสุด</span>
+              <button onClick={() => router.push('/victim/dashboard')}>ขอความช่วยเหลือ <ArrowUpRight size={15} /></button>
+            </div>
           </section>
-        </div>
+        </main>
       </div>
-    </main>
+    </>
   );
 }
 
 function PublicResponseItem({ report }: { report: PublicSosReport }) {
   const meta = getPublicResponseMeta(report);
-  const tone = meta.tone === 'safe' ? 'bg-emerald-50 text-emerald-700' : meta.tone === 'active' ? 'bg-blue-50 text-blue-700' : meta.tone === 'critical' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700';
-  const dot = meta.tone === 'safe' ? 'bg-emerald-500' : meta.tone === 'active' ? 'bg-blue-500' : meta.tone === 'critical' ? 'bg-rose-500' : 'bg-amber-500';
-  return <article className="flex items-center gap-3 rounded-2xl bg-slate-50 p-4 transition hover:bg-blue-50/50"><span className={`size-2 shrink-0 rounded-full ${dot}`} aria-hidden="true" /><div className="min-w-0 flex-1"><strong className="block truncate text-sm font-semibold text-[#0f172a]">{report.full_name || 'ผู้แจ้งเหตุ'}</strong><small className="mt-0.5 block truncate text-xs text-slate-500">{meta.description} · <span suppressHydrationWarning>{formatHomeTime(report.created_at)}</span></small></div><span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${tone}`}>{meta.label}</span></article>;
+  return <article className={`home-response-item ${meta.tone}`}>
+    <span className="home-response-item-dot" aria-hidden="true" />
+    <div className="home-response-item-copy">
+      <strong>{report.full_name || 'ผู้แจ้งเหตุ'}</strong>
+      <small>{meta.description} · {formatHomeTime(report.created_at)}</small>
+    </div>
+    <span className="home-response-item-status">{meta.label}</span>
+  </article>;
 }
 
 function getPublicResponseMeta(report: PublicSosReport) {
@@ -139,7 +204,17 @@ function RoleBlock({
   subtitle: string;
   tone: 'primary' | 'dark';
 }) {
-  return <button className="group relative w-full overflow-hidden rounded-[32px] bg-[#0f172a] p-6 text-left text-white shadow-[0_18px_40px_rgba(15,23,42,0.17)] transition duration-200 hover:-translate-y-1 hover:bg-[#172554] sm:p-8" onClick={onClick}><span className="absolute -right-9 -top-9 size-44 rounded-full border-[22px] border-white/5" aria-hidden="true" /><span className="relative flex items-start gap-4"><span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-white/10 text-blue-100"><Icon size={24} strokeWidth={2.2} /></span><span className="min-w-0 flex-1"><span className="block text-[11px] font-bold tracking-[.14em] text-blue-200">{eyebrow}</span><strong className="mt-2 block text-2xl font-bold tracking-tight">{title}</strong><small className="mt-2 block max-w-md text-sm leading-6 text-slate-300">{subtitle}</small></span><span className="grid size-10 shrink-0 place-items-center rounded-full bg-white text-[#0f172a] transition group-hover:scale-105"><ArrowUpRight size={18} strokeWidth={2.4} /></span></span></button>;
+  return (
+    <button className={`home-role home-role-${tone}`} onClick={onClick}>
+      <span className="home-role-icon"><Icon size={22} strokeWidth={2.2} /></span>
+      <span className="home-role-copy">
+        <span className="home-role-eyebrow">{eyebrow}</span>
+        <strong>{title}</strong>
+        <small>{subtitle}</small>
+      </span>
+      <span className="home-role-arrow"><ArrowUpRight size={17} strokeWidth={2.3} /></span>
+    </button>
+  );
 }
 
 function QuickBlock({
@@ -155,7 +230,16 @@ function QuickBlock({
   description: string;
   tone: 'light' | 'medium';
 }) {
-  return <button className="group flex min-h-40 items-start gap-3 rounded-3xl bg-blue-50/60 p-5 text-left shadow-[0_8px_30px_rgba(15,23,42,0.035)] transition hover:-translate-y-1 hover:bg-blue-50" onClick={onClick}><span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-white text-blue-700 shadow-sm"><Icon size={21} strokeWidth={2.2} /></span><span className="min-w-0 flex-1"><strong className="block font-bold text-[#0f172a]">{label}</strong><small className="mt-1.5 block text-xs leading-5 text-slate-500">{description}</small></span><ArrowUpRight className="shrink-0 text-slate-400 transition group-hover:text-blue-700" size={17} strokeWidth={2.2} /></button>;
+  return (
+    <button className={`home-quick home-quick-${tone}`} onClick={onClick}>
+      <span className="home-quick-icon"><Icon size={20} strokeWidth={2.2} /></span>
+      <span>
+        <strong>{label}</strong>
+        <small>{description}</small>
+      </span>
+      <ArrowUpRight className="home-quick-arrow" size={16} strokeWidth={2.2} />
+    </button>
+  );
 }
 
 const HOME_STYLES = `
