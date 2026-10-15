@@ -245,6 +245,7 @@ export default function OfficerDashboard() {
   const [outcomeDraft, setOutcomeDraft] = useState<OutcomeDraft | null>(null);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const [promptedDispatchId, setPromptedDispatchId] = useState<string | null>(null);
+  const [promptedActiveMissionId, setPromptedActiveMissionId] = useState<string | null>(null);
   const [outcomeSaving, setOutcomeSaving] = useState(false);
   // ข้อความแจ้งปัญหาสิทธิ์การเข้าใช้งาน (role/ศูนย์ยังไม่ถูกตั้งค่า) — โชว์ตรงๆ แทนการเด้งกลับ login แบบเงียบๆ
   // เพราะเคยทำให้ผู้ใช้เข้าใจผิดว่า session หลุด ทั้งที่จริงยัง login ค้างอยู่
@@ -538,6 +539,21 @@ export default function OfficerDashboard() {
       setPromptedDispatchId(nextOfferId);
     }
   }, [pendingDispatches, promptedDispatchId, reports]);
+
+  // เมื่อกลับเข้าหน้าแดชบอร์ด ให้พาไปยังงานที่บัญชีนี้รับไว้เองทันที
+  // ไม่สับสนกับบัตรสรุป "กำลังช่วยเหลือ" ซึ่งเป็นยอดรวมทุกทีม
+  useEffect(() => {
+    const activeMissionId = Object.entries(activeAssignments)
+      .find(([, assignment]) => assignment.rescuerId === profile?.id)?.[0] ?? null;
+    if (!activeMissionId) {
+      setPromptedActiveMissionId(null);
+      return;
+    }
+    if (activeMissionId !== promptedActiveMissionId && reports.some((report) => report.id === activeMissionId)) {
+      setSelectedReportId(activeMissionId);
+      setPromptedActiveMissionId(activeMissionId);
+    }
+  }, [activeAssignments, profile?.id, promptedActiveMissionId, reports]);
 
   // Kept for backwards-compatible databases until the automatic-dispatch migration is deployed.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -1003,9 +1019,11 @@ export default function OfficerDashboard() {
 
   const districts = [...new Set(reports.map(r => r.district).filter(Boolean))];
   const selectedReport = reports.find(report => report.id === selectedReportId) ?? null;
-  const myActiveReport = reports.find((report) => activeAssignments[report.id]?.rescuerId === profile?.id) ?? null;
+  const myActiveMissionId = Object.entries(activeAssignments).find(([, assignment]) => assignment.rescuerId === profile?.id)?.[0] ?? null;
+  const myActiveReport = myActiveMissionId ? reports.find((report) => report.id === myActiveMissionId) ?? null : null;
   const myActiveMissionCount = dispatchReadiness?.open_assignment_count ?? Object.values(activeAssignments)
     .filter((assignment) => assignment.rescuerId === profile?.id).length;
+  const hasMyActiveMission = myActiveMissionCount > 0 || Boolean(myActiveMissionId);
 
   if (accessError) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "var(--font-thai), 'Noto Sans Thai', sans-serif", padding: 20 }}>
@@ -1079,7 +1097,7 @@ export default function OfficerDashboard() {
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{ display: 'grid', gap: 4 }}>
-                {availability === 'busy' ? (
+                {hasMyActiveMission ? (
                   <>
                     <button
                       type="button"
@@ -1209,7 +1227,7 @@ export default function OfficerDashboard() {
             <div className="metric-stack">
               {[
                 { label: 'รอรับเรื่อง', count: reports.filter(r => r.status === 'pending').length, status: 'pending' },
-                { label: 'กำลังช่วยเหลือ', count: reports.filter(r => r.status === 'assigned').length, status: 'assigned' },
+                { label: 'กำลังช่วยเหลือ (ทุกทีม)', count: reports.filter(r => r.status === 'assigned').length, status: 'assigned' },
                 { label: 'ช่วยเหลือสำเร็จ', count: reports.filter(r => r.status === 'rescued').length, status: 'rescued' },
                 { label: 'ผู้ประสบภัยทั้งหมด', count: reports.reduce((total, report) => total + (report.adult_count ?? 0) + (report.child_count ?? 0) + (report.elder_count ?? 0), 0), status: 'all' },
               ].map(({ label, count, status }) => (
