@@ -360,7 +360,23 @@ export default function OfficerDashboard() {
       maximumAge: 30_000,
       timeout: 15_000,
     });
-    return () => navigator.geolocation.clearWatch(watchId);
+
+    // A stationary rescuer is still available. Some mobile browsers only emit
+    // watchPosition events after movement, so renew the consented point before
+    // the server's two-minute freshness window expires.
+    const refreshPosition = () => {
+      navigator.geolocation.getCurrentPosition(publish, () => {}, {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 15_000,
+      });
+    };
+    refreshPosition();
+    const heartbeatId = window.setInterval(refreshPosition, 60_000);
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+      window.clearInterval(heartbeatId);
+    };
   }, [availability, profile]);
 
   useEffect(() => {
