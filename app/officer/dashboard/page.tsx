@@ -173,6 +173,9 @@ function getPresenceErrorMessage(error: unknown) {
   if (supabaseError?.code === '22023' || message.includes('current location')) {
     return 'ต้องอนุญาตตำแหน่ง GPS ปัจจุบันก่อนเปิดรับงาน';
   }
+  if (message.includes('Finish or hand off the active mission before going available')) {
+    return 'ยังเปิดรับงานใหม่ไม่ได้ เพราะมีภารกิจที่กำลังช่วยเหลืออยู่ ให้กด “ไปยังภารกิจที่กำลังช่วย” แล้วบันทึกผลหรือส่งต่อเคสให้เสร็จก่อน';
+  }
   if (supabaseError?.code === 'P0002' || message.includes('No pending dispatch')) {
     return 'ข้อเสนอรับงานนี้หมดอายุ หรือถูกส่งต่อให้ทีมอื่นแล้ว';
   }
@@ -1000,6 +1003,9 @@ export default function OfficerDashboard() {
 
   const districts = [...new Set(reports.map(r => r.district).filter(Boolean))];
   const selectedReport = reports.find(report => report.id === selectedReportId) ?? null;
+  const myActiveReport = reports.find((report) => activeAssignments[report.id]?.rescuerId === profile?.id) ?? null;
+  const myActiveMissionCount = dispatchReadiness?.open_assignment_count ?? Object.values(activeAssignments)
+    .filter((assignment) => assignment.rescuerId === profile?.id).length;
 
   if (accessError) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "var(--font-thai), 'Noto Sans Thai', sans-serif", padding: 20 }}>
@@ -1072,31 +1078,47 @@ export default function OfficerDashboard() {
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ display: 'grid', gap: 3 }}>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button
-                    type="button"
-                    onClick={() => void changeAvailability('available')}
-                    disabled={availability === 'available' || availability === 'busy' || actionLoading === 'availability'}
-                    title="เปิดรับงานและแชร์ตำแหน่งเพื่อเข้าคิวอัตโนมัติ"
-                    style={{ padding: '8px 10px', borderRadius: 10, border: availability === 'available' ? '1px solid #167B4C' : '1px solid #A9DCC2', background: availability === 'available' ? '#167B4C' : '#EAF8F0', color: availability === 'available' ? '#fff' : '#167B4C', fontSize: 12, fontWeight: 800, cursor: availability === 'available' || availability === 'busy' ? 'not-allowed' : 'pointer', opacity: availability === 'busy' ? .5 : 1 }}
-                  >
-                    ● พร้อมรับงาน
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void changeAvailability('offline')}
-                    disabled={availability === 'offline' || availability === 'busy' || actionLoading === 'availability'}
-                    title="หยุดรับงานและหยุดแชร์ตำแหน่ง"
-                    style={{ padding: '8px 10px', borderRadius: 10, border: availability === 'offline' ? '1px solid #B42318' : '1px solid #F0C4C0', background: availability === 'offline' ? '#B42318' : '#FFF2F1', color: availability === 'offline' ? '#fff' : '#A33A20', fontSize: 12, fontWeight: 800, cursor: availability === 'offline' || availability === 'busy' ? 'not-allowed' : 'pointer', opacity: availability === 'busy' ? .5 : 1 }}
-                  >
-                    ○ ไม่พร้อมรับงาน
-                  </button>
-                </div>
-                <span style={{ color: availability === 'available' ? '#167B4C' : availability === 'busy' ? '#0353A4' : '#A33A20', fontSize: 11, fontWeight: 700 }}>
-                  {availability === 'available' ? 'สถานะ: เข้าคิวรับงานอัตโนมัติ' : availability === 'busy' ? 'สถานะ: กำลังปฏิบัติภารกิจ จึงรับงานเพิ่มไม่ได้' : 'สถานะ: ไม่อยู่ในคิวรับงาน'}
-                </span>
-                {availability === 'available' && dispatchReadiness && !dispatchReadiness.ready && <span style={{ maxWidth: 170, color: '#A33A20', fontSize: 10, lineHeight: 1.25 }}>ยังไม่เข้าคิวงาน: {!dispatchReadiness.has_current_location ? 'รอพิกัดปัจจุบัน' : dispatchReadiness.service_area_count < 1 ? 'ยังไม่กำหนดพื้นที่บริการ' : 'มีภารกิจค้างอยู่'}</span>}
+              <div style={{ display: 'grid', gap: 4 }}>
+                {availability === 'busy' ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => myActiveReport ? setSelectedReportId(myActiveReport.id) : alert('กำลังซิงก์ข้อมูลภารกิจ กรุณารอสักครู่แล้วลองอีกครั้ง')}
+                      title="เปิดภารกิจที่ต้องดำเนินการต่อ"
+                      style={{ padding: '9px 12px', borderRadius: 10, border: '1px solid #0353A4', background: '#0353A4', color: '#fff', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}
+                    >
+                      ไปยังภารกิจที่กำลังช่วย {myActiveMissionCount > 1 ? `(${myActiveMissionCount})` : ''} →
+                    </button>
+                    <span style={{ maxWidth: 205, color: '#0353A4', fontSize: 11, fontWeight: 700, lineHeight: 1.35 }}>กำลังช่วยเหลืออยู่ · ต้องบันทึกผลหรือส่งต่อเคสก่อน จึงจะเปิดรับงานใหม่ได้</span>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        type="button"
+                        onClick={() => void changeAvailability('available')}
+                        disabled={availability === 'available' || actionLoading === 'availability'}
+                        title="เปิดรับงานอัตโนมัติและแชร์ตำแหน่งให้ระบบคัดเลือก"
+                        style={{ padding: '8px 10px', borderRadius: 10, border: availability === 'available' ? '1px solid #167B4C' : '1px solid #A9DCC2', background: availability === 'available' ? '#167B4C' : '#EAF8F0', color: availability === 'available' ? '#fff' : '#167B4C', fontSize: 12, fontWeight: 800, cursor: availability === 'available' ? 'not-allowed' : 'pointer' }}
+                      >
+                        ● เปิดรับงาน
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void changeAvailability('offline')}
+                        disabled={availability === 'offline' || actionLoading === 'availability'}
+                        title="พักงาน: ไม่รับข้อเสนอเคสใหม่"
+                        style={{ padding: '8px 10px', borderRadius: 10, border: availability === 'offline' ? '1px solid #B42318' : '1px solid #F0C4C0', background: availability === 'offline' ? '#B42318' : '#FFF2F1', color: availability === 'offline' ? '#fff' : '#A33A20', fontSize: 12, fontWeight: 800, cursor: availability === 'offline' ? 'not-allowed' : 'pointer' }}
+                      >
+                        ○ พักงาน
+                      </button>
+                    </div>
+                    <span style={{ color: availability === 'available' ? '#167B4C' : '#A33A20', fontSize: 11, fontWeight: 700 }}>
+                      {availability === 'available' ? 'กำลังเข้าคิว ระบบจะส่งข้อเสนอเคสมาให้กดรับ' : 'พักงานอยู่ · กด “เปิดรับงาน” เมื่อต้องการเข้าคิว'}
+                    </span>
+                    {availability === 'available' && dispatchReadiness && !dispatchReadiness.ready && <span style={{ maxWidth: 205, color: '#A33A20', fontSize: 10, lineHeight: 1.25 }}>ยังไม่เข้าคิวงาน: {!dispatchReadiness.has_current_location ? 'รอพิกัดปัจจุบัน' : dispatchReadiness.service_area_count < 1 ? 'ยังไม่กำหนดพื้นที่บริการ' : 'มีภารกิจค้างอยู่'}</span>}
+                  </>
+                )}
               </div>
               <button className="rescue-logout" onClick={handleLogout} style={{ padding: '7px 14px', borderRadius: 10, border: '1px solid #ECEEF5', background: '#fff', fontSize: 13, fontWeight: 600, color: '#6B7280', cursor: 'pointer' }}>
                 ออกจากระบบ
