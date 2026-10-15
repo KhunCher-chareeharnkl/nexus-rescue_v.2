@@ -613,6 +613,8 @@ export default function OfficerDashboard() {
       if (data?.accepted) {
         setAvailability('busy');
         setNavigatingId(reportId);
+        // พาเจ้าหน้าที่เข้าสู่หน้าภารกิจเต็มทันทีหลังรับงานสำเร็จ
+        setSelectedReportId(reportId);
         setReports(current => current.map(report => report.id === reportId ? { ...report, status: 'assigned' } : report));
         if (profile) setActiveAssignments(current => ({ ...current, [reportId]: { rescuerId: profile.id, status: 'accepted' } }));
       }
@@ -1051,10 +1053,11 @@ export default function OfficerDashboard() {
         .filter-bar{border-color:rgba(51,65,92,.1)!important;background:rgba(255,255,255,.9)!important}.filter-label{color:var(--ink)}.filter-button{min-height:40px;background:#EEF2F7!important;color:var(--slate)!important}.filter-button:hover{color:var(--blue)!important;background:#EAF3FC!important}.filter-button.selected{color:#fff!important;background:var(--blue)!important;box-shadow:0 5px 13px rgba(4,102,200,.2)}.district-filter{min-height:40px;color:var(--slate)!important;border-color:var(--line)!important}
         .mission-list{display:grid;gap:9px}.mission-row{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 112px;gap:8px;overflow:hidden;border:1px solid rgba(51,65,92,.11);border-radius:17px;background:rgba(255,255,255,.92);box-shadow:0 7px 20px rgba(0,24,69,.04);transition:.2s}.mission-row::before{content:"";position:absolute;inset:0 auto 0 0;width:5px;background:var(--muted)}.mission-row.urgency-critical::before{background:#B42318}.mission-row.urgency-high::before{background:#D92D20}.mission-row.urgency-medium::before{background:#F79009}.mission-row.urgency-low::before{background:#EAAA08}.mission-row:hover{transform:translateY(-2px);border-color:#BED0E2;box-shadow:0 12px 27px rgba(0,24,69,.08)}
         .mission-open{min-width:0;display:flex;align-items:center;padding:17px 12px 17px 20px;border:0;color:var(--ink);background:transparent;font:inherit;text-align:left;cursor:pointer}.mission-name{min-width:0}.mission-name strong{display:block;overflow:hidden;font-size:16px;text-overflow:ellipsis;white-space:nowrap}.mission-map{margin:8px;display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid #B8CEE4;border-radius:12px;color:var(--blue-strong);background:#F2F7FC;font:700 13px/1 inherit;cursor:pointer}.mission-map:hover{color:#fff;background:var(--blue)}.mission-map:disabled{color:var(--pale);border-color:var(--line);background:#F1F3F6;cursor:not-allowed}.mission-empty{padding:60px 20px;text-align:center;color:var(--muted);font-size:15px}
+        .active-mission{position:fixed;inset:0;z-index:120;overflow:auto;background:#f2f7fc;color:#102a43;font-family:var(--font-thai),'Noto Sans Thai',sans-serif}.active-mission-shell{max-width:680px;min-height:100%;margin:0 auto;padding-bottom:112px;background:#f8fbff}.active-mission-top{display:flex;align-items:center;gap:14px;padding:18px 20px;background:#fff;border-bottom:1px solid #e2eaf2;position:sticky;top:0;z-index:2}.active-mission-back{width:38px;height:38px;border:0;border-radius:12px;color:#0353a4;background:#edf5fd;font-size:27px;line-height:1;cursor:pointer}.active-mission-top strong{font-size:18px}.active-mission-top small{display:block;color:#6b7c93;font-size:12px;margin-top:2px}.active-mission-hero{padding:26px 20px 22px;color:#fff;background:linear-gradient(135deg,#002855,#0466c8)}.active-mission-kicker{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;color:#ffd49b;background:rgba(255,255,255,.14);font-size:12px;font-weight:800}.active-mission-hero h1{margin:15px 0 5px;color:#fff!important;font-size:27px;line-height:1.25}.active-mission-hero p{margin:0;color:#d8eaff;font-size:14px}.active-progress{display:grid;grid-template-columns:repeat(4,1fr);gap:0;padding:22px 20px 16px;background:#fff;border-bottom:1px solid #e2eaf2}.active-progress-step{position:relative;display:grid;justify-items:center;gap:7px;color:#98a5b4;font-size:10px;font-weight:700;text-align:center}.active-progress-step:not(:last-child)::after{content:'';position:absolute;top:12px;left:56%;width:88%;height:3px;border-radius:99px;background:#d8e3ef}.active-progress-dot{position:relative;z-index:1;display:grid;place-items:center;width:27px;height:27px;border:2px solid #c9d7e5;border-radius:50%;background:#fff;font-size:12px}.active-progress-step.done,.active-progress-step.current{color:#0466c8}.active-progress-step.done::after{background:#0466c8}.active-progress-step.done .active-progress-dot,.active-progress-step.current .active-progress-dot{border-color:#0466c8;color:#fff;background:#0466c8}.active-progress-step.current .active-progress-dot{box-shadow:0 0 0 5px rgba(4,102,200,.14)}.active-mission-content{display:grid;gap:12px;padding:14px 14px 24px}.active-person-card,.active-info-card{border:1px solid #e1e9f1;border-radius:18px;background:#fff;box-shadow:0 5px 15px rgba(0,40,85,.04)}.active-person-card{display:grid;grid-template-columns:54px minmax(0,1fr) auto;gap:12px;align-items:center;padding:15px}.active-avatar{display:grid;place-items:center;width:54px;height:54px;border-radius:50%;color:#fff;background:linear-gradient(135deg,#ff8a65,#d84315);font-size:23px;font-weight:800}.active-person-card h2{margin:0;color:#102a43;font-size:18px}.active-person-card p{margin:4px 0 0;color:#63758b;font-size:13px}.active-call{display:grid;place-items:center;width:40px;height:40px;border:1px solid #b9d3ec;border-radius:12px;color:#0466c8;background:#f3f8fd;font-size:19px;text-decoration:none}.active-info-card{padding:16px}.active-card-label{display:flex;align-items:center;gap:7px;color:#718096;font-size:12px;font-weight:800}.active-card-label i{width:8px;height:8px;border-radius:50%;background:#e76f51}.active-card-label.safe i{background:#16a085}.active-info-card h3{margin:9px 0 4px;color:#102a43;font-size:18px;line-height:1.4}.active-info-card p{margin:0;color:#63758b;font-size:14px;line-height:1.55}.active-people{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:13px}.active-people span{padding:9px 7px;border-radius:11px;color:#3d536b;background:#f2f6fa;font-size:12px;text-align:center}.active-people b{display:block;margin-top:3px;color:#102a43;font-size:18px}.active-alert{padding:12px;border-left:4px solid #f59e0b;border-radius:11px;color:#8a5000;background:#fff7df;font-size:13px;line-height:1.55}.active-map-link{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:46px;margin-top:14px;border:1px solid #a9c9e8;border-radius:12px;color:#0353a4;background:#f1f7fd;font:800 14px/1 inherit;cursor:pointer}.active-action-bar{position:fixed;z-index:4;bottom:0;left:50%;width:min(100%,680px);transform:translateX(-50%);display:grid;grid-template-columns:1fr 1.35fr;gap:9px;padding:12px 14px;box-sizing:border-box;border-top:1px solid #dbe6ef;background:rgba(255,255,255,.96);backdrop-filter:blur(10px)}.active-action-bar button{min-height:50px;border-radius:13px;font:800 14px/1 inherit;cursor:pointer}.active-action-secondary{border:1px solid #bdd3e8;color:#0353a4;background:#fff}.active-action-primary{border:0;color:#fff;background:#0466c8;box-shadow:0 7px 17px rgba(4,102,200,.2)}.active-action-primary.done{background:#0f766e}.active-mission-back:focus-visible,.active-action-bar button:focus-visible{outline:3px solid #ffbd59;outline-offset:2px}
         .mission-modal-backdrop{--blue:#0466C8;--blue-strong:#0353A4;--blue-deep:#023E7D;--navy:#002855;--ink:#001845;--midnight:#001233;--slate:#33415C;--muted:#7D8597;--line:#DDE3EC;position:fixed;inset:0;z-index:110;display:grid;place-items:center;padding:20px;background:rgba(0,18,51,.58);backdrop-filter:blur(7px)}.mission-modal{position:relative;width:min(100%,620px);max-height:min(88vh,760px);overflow:auto;border:1px solid rgba(255,255,255,.13);border-radius:25px;background:#fff;box-shadow:0 28px 80px rgba(0,18,51,.28);animation:rise-in .25s ease}.mission-modal-close{position:absolute;z-index:3;right:14px;top:14px;width:38px;height:38px;border:1px solid rgba(255,255,255,.25);border-radius:12px;color:#fff;background:rgba(255,255,255,.12);font:500 24px/1 inherit;cursor:pointer}.mission-modal-hero{padding:27px 64px 24px 25px;color:#fff;background:linear-gradient(135deg,#002855,#023E7D)}.mission-modal-kicker{color:#A9CDEC;font-size:12px;font-weight:750;letter-spacing:.08em}.mission-modal h2{margin:7px 0 3px;color:#fff!important;font-size:25px}.mission-modal-hero p{color:rgba(255,255,255,.72);font-size:14px}.mission-modal-body{display:grid;gap:13px;padding:21px}.mission-modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.mission-modal-grid>div{padding:12px;border:1px solid var(--line);border-radius:12px;background:#F8FAFD}.mission-modal-grid .wide{grid-column:1/-1}.mission-modal-grid .important{border-left:3px solid var(--blue);background:#EAF3FC}.mission-modal-grid span,.mission-modal-grid strong,.mission-modal-grid small{display:block}.mission-modal-grid span{color:var(--muted);font-size:13px}.mission-modal-grid strong{margin-top:3px;color:var(--slate);font-size:15px;line-height:1.5}.mission-modal-grid small{margin-top:2px;color:var(--muted);font-size:13px}.mission-modal-map,.mission-modal-primary{min-height:48px;border-radius:12px;font:750 14px/1 inherit;cursor:pointer}.mission-modal-map{border:1px solid #B8CEE4;color:var(--blue);background:#F1F6FC}.mission-modal-primary{border:0;color:#fff;background:linear-gradient(135deg,var(--blue),var(--blue-strong));box-shadow:0 7px 17px rgba(4,102,200,.17)}.mission-modal-primary.dark{background:var(--midnight)}.mission-modal-actions{display:grid;gap:9px}.mission-stage{padding:11px;border-radius:11px;color:var(--blue-deep);background:#EAF3FC;text-align:center;font-size:14px;font-weight:700}.mission-stage-buttons{display:grid;grid-template-columns:1fr;gap:8px}.mission-stage-buttons button{min-height:46px;border:1px solid var(--line);border-radius:11px;color:var(--slate);background:#F5F8FC;font:700 14px/1 inherit;cursor:pointer}.mission-stage-complete{display:grid;place-items:center;min-height:44px;border-radius:11px;color:#0353A4;background:#EAF3FC;font-size:14px;font-weight:750}
         .outcome-backdrop{align-items:center!important;padding:20px}.outcome-sheet{border-radius:22px!important;max-width:540px!important;max-height:88vh!important;box-shadow:0 25px 70px rgba(0,18,51,.3)!important}.outcome-sheet input,.outcome-sheet select,.outcome-sheet textarea,.outcome-sheet button{font-size:14px!important}.outcome-sheet [style*="font-size: 10"],.outcome-sheet [style*="font-size: 11"],.outcome-sheet [style*="font-size: 12"]{font-size:13px!important}
         .mission-meta{display:flex;align-items:center;gap:6px;margin-top:6px}.mission-priority,.mission-status{display:inline-flex;align-items:center;padding:3px 7px;border-radius:999px;font-size:11px;font-weight:800;line-height:1}.mission-priority.urgency-critical{color:#B42318;background:#FEE4E2}.mission-priority.urgency-high{color:#C2410C;background:#FFF0E5}.mission-priority.urgency-medium{color:#A16207;background:#FFF7D6}.mission-priority.urgency-low{color:#047857;background:#E8F8F0}.mission-status.status-pending{color:#9A3412;background:#FFF1E8}.mission-status.status-assigned{color:#1D4ED8;background:#EAF2FF}.mission-status.status-rescued{color:#047857;background:#E8F8F0}.mission-status.status-cannot_reach{color:#A16207;background:#FFF7D6}.mission-status.status-closed{color:#475569;background:#EEF2F6}
-        @media(max-width:760px){.rescue-app{padding-left:0;padding-bottom:0}.rescue-app>header{padding:13px 14px!important}.rescue-app>header>div>div:last-child{gap:7px!important}.rescue-app>header button{padding:8px 9px!important;font-size:12px!important}.dashboard-overview{grid-template-columns:1fr}.operation-hero{min-height:192px;padding:22px}.rescue-app main{padding:17px 13px 28px!important}.filter-label{width:100%;margin:0 4px 2px}.district-filter{margin-left:0!important;width:100%}.mission-row{grid-template-columns:minmax(0,1fr) 86px}.mission-open{padding-left:16px}.mission-map{font-size:12px}.mission-modal-backdrop{padding:11px}.mission-modal{max-height:92vh;border-radius:20px}.mission-modal-grid{grid-template-columns:1fr}.mission-modal-grid .wide{grid-column:auto}}
+        @media(max-width:760px){.rescue-app{padding-left:0;padding-bottom:0}.rescue-app>header{padding:13px 14px!important}.rescue-app>header>div>div:last-child{gap:7px!important}.rescue-app>header button{padding:8px 9px!important;font-size:12px!important}.dashboard-overview{grid-template-columns:1fr}.operation-hero{min-height:192px;padding:22px}.rescue-app main{padding:17px 13px 28px!important}.filter-label{width:100%;margin:0 4px 2px}.district-filter{margin-left:0!important;width:100%}.mission-row{grid-template-columns:minmax(0,1fr) 86px}.mission-open{padding-left:16px}.mission-map{font-size:12px}.mission-modal-backdrop{padding:11px}.mission-modal{max-height:92vh;border-radius:20px}.mission-modal-grid{grid-template-columns:1fr}.mission-modal-grid .wide{grid-column:auto}.active-mission-top{padding:14px}.active-mission-hero{padding:22px 16px 19px}.active-mission-hero h1{font-size:24px}.active-progress{padding:18px 12px 14px}.active-progress-step{font-size:9px}.active-progress-step:not(:last-child)::after{left:57%;width:84%}.active-mission-content{padding:12px 11px 22px}.active-info-card h3{font-size:16px}.active-action-bar{grid-template-columns:1fr 1.25fr;padding:10px 11px}.active-action-bar button{min-height:48px;font-size:13px}}
       `}</style>
 
       <div className="rescue-app" style={{ minHeight: '100vh', background: '#F0F2FA', fontFamily: "var(--font-thai), 'Noto Sans Thai', sans-serif" }}>
@@ -1288,6 +1291,87 @@ export default function OfficerDashboard() {
           ? new Date(pendingDispatch.respond_by).toLocaleTimeString('th-TH')
           : '';
         const totalPeople = (item.adult_count ?? 0) + (item.child_count ?? 0) + (item.elder_count ?? 0);
+
+        if (item.status === 'assigned' && isMyAssignment) {
+          const currentStep = stage === 'on_scene' ? 3 : stage === 'en_route' ? 2 : 1;
+          const primaryAction = stage === 'on_scene'
+            ? 'บันทึกผลการช่วยเหลือ'
+            : stage === 'en_route'
+              ? 'ยืนยันว่าถึงจุดเกิดเหตุ'
+              : 'เริ่มเดินทางไปช่วยเหลือ';
+          const missionTitle = stage === 'on_scene'
+            ? 'กำลังช่วยเหลือผู้ประสบภัย'
+            : stage === 'en_route'
+              ? 'กำลังเดินทางไปยังจุดเกิดเหตุ'
+              : 'รับภารกิจแล้ว เตรียมออกเดินทาง';
+
+          const proceedMission = () => {
+            if (stage === 'on_scene') {
+              setSelectedReportId(null);
+              openOutcomeModal(item);
+            } else if (stage === 'en_route') {
+              void updateAssignment(item.id, 'assigned', 'on_scene');
+            } else {
+              void updateAssignment(item.id, 'assigned', 'en_route');
+            }
+          };
+
+          return (
+            <section className="active-mission" role="dialog" aria-modal="true" aria-labelledby="active-mission-title">
+              <div className="active-mission-shell">
+                <header className="active-mission-top">
+                  <button className="active-mission-back" type="button" onClick={() => setSelectedReportId(null)} aria-label="กลับไปหน้ารายการภารกิจ">←</button>
+                  <div><strong>ภารกิจที่กำลังดำเนินการ</strong><small>ศูนย์ประสานงานกู้ภัย Nexus Rescue</small></div>
+                </header>
+
+                <div className="active-mission-hero">
+                  <span className="active-mission-kicker">● {URGENCY_LABEL[item.urgency_level]} · เคสฉุกเฉิน</span>
+                  <h1 id="active-mission-title">{missionTitle}</h1>
+                  <p>รับแจ้งเมื่อ {new Date(item.created_at).toLocaleString('th-TH')}</p>
+                </div>
+
+                <div className="active-progress" aria-label="ความคืบหน้าภารกิจ">
+                  {['รับภารกิจ', 'ออกเดินทาง', 'ถึงจุดเกิดเหตุ', 'ปิดภารกิจ'].map((label, index) => {
+                    const stepNo = index + 1;
+                    const stepClass = stepNo < currentStep ? 'done' : stepNo === currentStep ? 'current' : '';
+                    return <div key={label} className={`active-progress-step ${stepClass}`}><span className="active-progress-dot">{stepNo < currentStep ? '✓' : stepNo}</span><span>{label}</span></div>;
+                  })}
+                </div>
+
+                <main className="active-mission-content">
+                  <article className="active-person-card">
+                    <div className="active-avatar" aria-hidden="true">{item.full_name.trim().slice(0, 1) || '?'}</div>
+                    <div><h2>{item.full_name}</h2><p>ผู้แจ้งเหตุ · ผู้ประสบภัย {totalPeople} คน</p></div>
+                    <a className="active-call" href={`tel:${item.phone}`} aria-label={`โทรหา ${item.full_name}`}>☎</a>
+                  </article>
+
+                  <article className="active-info-card">
+                    <span className="active-card-label"><i /> จุดเกิดเหตุ</span>
+                    <h3>{locationLabel}</h3>
+                    <p>{item.address_details || 'ไม่มีรายละเอียดจุดสังเกตเพิ่มเติม'}</p>
+                    <div className="active-people">
+                      <span>ผู้ใหญ่<b>{item.adult_count ?? 0}</b></span>
+                      <span>เด็ก<b>{item.child_count ?? 0}</b></span>
+                      <span>ผู้สูงอายุ<b>{item.elder_count ?? 0}</b></span>
+                    </div>
+                    {coordinates && <button className="active-map-link" type="button" onClick={() => openNavigation(coordinates.lat, coordinates.lng, locationLabel)}>⌖ เปิดแผนที่นำทาง</button>}
+                  </article>
+
+                  <article className="active-info-card">
+                    <span className="active-card-label safe"><i /> ข้อมูลสำหรับการช่วยเหลือ</span>
+                    <h3>ระดับน้ำ {item.water_level ?? '-'} เมตร</h3>
+                    <p>สิ่งที่ต้องการ: {item.needed_items?.length ? item.needed_items.join(', ') : 'ไม่ได้ระบุ'}</p>
+                    {item.special_needs && <div className="active-alert" style={{ marginTop: 13 }}><strong>หมายเหตุสำคัญ: </strong>{item.special_needs}</div>}
+                  </article>
+                </main>
+              </div>
+              <footer className="active-action-bar">
+                {coordinates ? <button className="active-action-secondary" type="button" onClick={() => openNavigation(coordinates.lat, coordinates.lng, locationLabel)}>เปิดแผนที่</button> : <button className="active-action-secondary" type="button" onClick={() => window.location.assign(`tel:${item.phone}`)}>โทรหา</button>}
+                <button className={`active-action-primary ${stage === 'on_scene' ? 'done' : ''}`} type="button" onClick={proceedMission} disabled={isLoading}>{primaryAction}</button>
+              </footer>
+            </section>
+          );
+        }
 
         return (
           <div className="mission-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedReportId(null); }}>
