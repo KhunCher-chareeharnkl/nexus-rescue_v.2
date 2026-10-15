@@ -224,6 +224,7 @@ export default function OfficerDashboard() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [myCoords, setMyCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [availability, setAvailability] = useState<'available' | 'busy' | 'offline'>('offline');
+  const [dispatchReadiness, setDispatchReadiness] = useState<{ ready: boolean; has_current_location: boolean; service_area_count: number; open_assignment_count: number } | null>(null);
   const [pendingDispatches, setPendingDispatches] = useState<Record<string, PendingDispatch>>({});
   const [reports, setReports] = useState<SOSReport[]>([]);
   const [filterStatus, setFilterStatus] = useState<string>('active');
@@ -270,16 +271,11 @@ export default function OfficerDashboard() {
         : '';
 
       if (profErr || !prof) {
-        const { data: created } = await supabase
-          .from('profiles')
-          .insert({
-            id: user.id,
-            full_name: metadataName || user.email || 'เจ้าหน้าที่',
-            email: accountEmail,
-            role: 'rescuer',
-          })
-          .select().single();
-        resolvedProfile = created;
+        // A signed-in email is not authorization.  An admin-issued access code
+        // must create/activate the profile before a rescuer can see operations.
+        setAccessError('บัญชีนี้ยังไม่ได้รับอนุมัติเป็นเจ้าหน้าที่กู้ภัย กรุณาใช้รหัสเข้าถึงที่ออกโดยผู้ดูแล หรือให้ผู้ดูแลเพิ่มบัญชีให้ก่อน');
+        setLoading(false);
+        return;
       } else {
         resolvedProfile = prof;
         const identityPatch: Record<string, string> = {};
@@ -418,6 +414,11 @@ export default function OfficerDashboard() {
       }
     };
 
+    const fetchDispatchReadiness = async () => {
+      const { data, error } = await supabase.rpc('get_my_rescuer_dispatch_readiness');
+      if (!error && data) setDispatchReadiness(data as { ready: boolean; has_current_location: boolean; service_area_count: number; open_assignment_count: number });
+    };
+
     const fetchShelters = async () => {
       const { data } = await supabase
         .from('shelters').select('id, name, address, province, capacity, current_occupancy')
@@ -430,6 +431,7 @@ export default function OfficerDashboard() {
       void fetchJobStages();
       void fetchPendingDispatches();
       void fetchMyAvailability();
+      void fetchDispatchReadiness();
       void fetchShelters();
     };
 
@@ -620,41 +622,15 @@ export default function OfficerDashboard() {
     try {
       setReports(prev => prev.map(r => r.id === reportId ? { ...r, status: newSOSStatus } : r));
 
-      const { error: sosErr } = await supabase
-        .from('sos_reports')
-        .update({ status: newSOSStatus, updated_at: new Date().toISOString() })
-        .eq('id', reportId);
-      if (sosErr) throw sosErr;
-
-      const updateData: any = { status: newAssignStatus };
-      if (notes) updateData.notes = notes;
-      if (newAssignStatus === 'completed') updateData.completed_at = new Date().toISOString();
+      const { error: transitionError } = await supabase.rpc('advance_rescue_assignment', {
+        p_sos_report_id: reportId,
+        p_next_status: newAssignStatus,
+        p_notes: notes ?? null,
+      });
+      if (transitionError) throw transitionError;
 
       // กรองเฉพาะแถว assignment ที่ยัง active อยู่ กันไปทับสถานะของแถวประวัติเก่าที่ปิดเคสไปแล้ว
       // (เคยเกิดเคสที่กด "ลองเข้าใหม่" แล้วมี assignment มากกว่า 1 แถวต่อ report+rescuer เดิม)
-      const { error: assignErr } = await supabase
-        .from('assignments').update(updateData)
-        .eq('sos_report_id', reportId).eq('rescuer_id', profile.id)
-        .in('status', ['accepted', 'en_route', 'on_scene']);
-      if (assignErr) throw assignErr;
-
-      const victimMap: Record<string, string> = {
-        rescued: 'rescued', cannot_reach: 'unknown', closed: 'unknown',
-      };
-      if (newAssignStatus === 'en_route' || newAssignStatus === 'on_scene') {
-        await supabase.from('victim_status').upsert({
-          sos_report_id: reportId,
-          status: 'rescue_assigned',
-          notes: newAssignStatus === 'en_route'
-            ? 'ทีมกู้ภัยเริ่มเดินทางไปยังจุดเกิดเหตุแล้ว'
-            : 'ทีมกู้ภัยถึงจุดเกิดเหตุและกำลังดำเนินการช่วยเหลือ',
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'sos_report_id' });
-      } else if (victimMap[newSOSStatus]) {
-        await supabase.from('victim_status')
-          .update({ status: victimMap[newSOSStatus], updated_at: new Date().toISOString() })
-          .eq('sos_report_id', reportId);
-      }
 
       // อัปเดต badge ขั้นตอนงานให้ตรงกับสถานะล่าสุดที่เพิ่งเซฟลง DB สำเร็จ
       if (newAssignStatus === 'en_route' || newAssignStatus === 'on_scene') {
@@ -1077,15 +1053,18 @@ export default function OfficerDashboard() {
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <button
-                type="button"
-                onClick={() => void changeAvailability(availability === 'available' ? 'offline' : 'available')}
-                disabled={availability === 'busy' || actionLoading === 'availability'}
-                title={availability === 'busy' ? 'กำลังปฏิบัติภารกิจอยู่' : 'เปลี่ยนสถานะการรับงาน'}
-                style={{ padding: '7px 10px', borderRadius: 10, border: '1px solid #ECEEF5', background: availability === 'available' ? '#EAF8F0' : '#F8FAFC', color: availability === 'available' ? '#19744B' : '#6B7280', fontSize: 12, fontWeight: 700, cursor: availability === 'busy' ? 'not-allowed' : 'pointer' }}
-              >
-                {availability === 'available' ? '● พร้อมรับงาน' : availability === 'busy' ? '● กำลังปฏิบัติภารกิจ' : '○ ไม่พร้อมรับงาน'}
-              </button>
+              <div style={{ display: 'grid', gap: 3 }}>
+                <button
+                  type="button"
+                  onClick={() => void changeAvailability(availability === 'available' ? 'offline' : 'available')}
+                  disabled={availability === 'busy' || actionLoading === 'availability'}
+                  title={availability === 'busy' ? 'กำลังปฏิบัติภารกิจอยู่' : 'เปลี่ยนสถานะการรับงาน'}
+                  style={{ padding: '7px 10px', borderRadius: 10, border: '1px solid #ECEEF5', background: availability === 'available' ? '#EAF8F0' : '#F8FAFC', color: availability === 'available' ? '#19744B' : '#6B7280', fontSize: 12, fontWeight: 700, cursor: availability === 'busy' ? 'not-allowed' : 'pointer' }}
+                >
+                  {availability === 'available' ? '● พร้อมรับงาน' : availability === 'busy' ? '● กำลังปฏิบัติภารกิจ' : '○ ไม่พร้อมรับงาน'}
+                </button>
+                {availability === 'available' && dispatchReadiness && !dispatchReadiness.ready && <span style={{ maxWidth: 170, color: '#A33A20', fontSize: 10, lineHeight: 1.25 }}>ยังไม่เข้าคิวงาน: {!dispatchReadiness.has_current_location ? 'รอพิกัดปัจจุบัน' : dispatchReadiness.service_area_count < 1 ? 'ยังไม่กำหนดพื้นที่บริการ' : 'มีภารกิจค้างอยู่'}</span>}
+              </div>
               <button className="rescue-logout" onClick={handleLogout} style={{ padding: '7px 14px', borderRadius: 10, border: '1px solid #ECEEF5', background: '#fff', fontSize: 13, fontWeight: 600, color: '#6B7280', cursor: 'pointer' }}>
                 ออกจากระบบ
               </button>

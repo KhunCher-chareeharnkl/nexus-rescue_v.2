@@ -58,6 +58,8 @@ export default function OfficerLogin() {
   const [code, setCode] = useState('');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
+  const [emailOtp, setEmailOtp] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
@@ -97,6 +99,8 @@ export default function OfficerLogin() {
   const handleSelectRole = (selectedRole: Role) => {
     setRole(selectedRole);
     setMessage(null);
+    setEmailOtp('');
+    setOtpSent(false);
     setStep('details');
   };
 
@@ -170,11 +174,36 @@ export default function OfficerLogin() {
     if (otpError) {
       setMessage({ type: 'error', text: `เกิดข้อผิดพลาด: ${otpError.message}` });
     } else {
+      setOtpSent(true);
       setMessage({
         type: 'success',
-        text: 'ส่งลิงก์เข้าสู่ระบบไปยังอีเมลแล้ว กรุณาเปิดกล่องข้อความและกดลิงก์เพื่อเข้าใช้งาน',
+        text: 'ส่งลิงก์เข้าสู่ระบบไปยังอีเมลแล้ว หากลิงก์เปิดไม่ได้ ให้ใช้รหัส 6 หลักจากอีเมลด้านล่างแทน',
       });
     }
+  };
+
+  const handleVerifyEmailCode = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!emailOtp.trim() || !email.trim()) return;
+    setLoading(true);
+    setMessage(null);
+    const { error } = await supabase.auth.verifyOtp({
+      email: email.trim(),
+      token: emailOtp.trim(),
+      type: 'email',
+    });
+    if (error) {
+      setLoading(false);
+      setMessage({ type: 'error', text: `ยืนยันรหัสไม่สำเร็จ: ${error.message}` });
+      return;
+    }
+    const sessionResponse = await fetch('/auth/session', { method: 'POST', credentials: 'same-origin' });
+    setLoading(false);
+    if (!sessionResponse.ok) {
+      setMessage({ type: 'error', text: 'ยืนยันรหัสแล้ว แต่ยังสร้างเซสชันไม่ได้ กรุณาลองใหม่' });
+      return;
+    }
+    window.location.replace('/officer/dashboard');
   };
 
   const selectedRole = role ? ROLE_META[role] : null;
@@ -334,6 +363,19 @@ export default function OfficerLogin() {
                   <button className="login-submit" type="submit" disabled={loading}>
                     <span>{loading ? 'กำลังตรวจสอบข้อมูล...' : 'ยืนยันและรับลิงก์เข้าสู่ระบบ'}</span>
                     {!loading && <ArrowRight size={17} />}
+                  </button>
+                </form>
+              )}
+
+              {otpSent && (
+                <form className="login-form" onSubmit={handleVerifyEmailCode} style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #DDE3EC' }}>
+                  <label className="login-field">
+                    <span>รหัสยืนยัน 6 หลัก (ใช้แทนลิงก์ได้)</span>
+                    <div className="login-control"><KeyRound size={17} /><input inputMode="numeric" pattern="[0-9]*" maxLength={8} placeholder="เช่น 123456" value={emailOtp} onChange={(event) => setEmailOtp(event.target.value.replace(/\s/g, ''))} autoComplete="one-time-code" /></div>
+                  </label>
+                  <button className="login-submit" type="submit" disabled={loading || !emailOtp.trim()}>
+                    <span>{loading ? 'กำลังยืนยันรหัส...' : 'ยืนยันด้วยรหัส'}</span>
+                    {!loading && <CheckCircle2 size={17} />}
                   </button>
                 </form>
               )}

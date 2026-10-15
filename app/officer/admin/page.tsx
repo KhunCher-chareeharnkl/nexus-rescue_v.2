@@ -1114,6 +1114,31 @@ function VictimsTab() {
   const totalPages = Math.max(1, Math.ceil(totalCount / ADMIN_PAGE_SIZE));
   const filtered = reports;
 
+  const retryDispatch = async (report: SOSReport) => {
+    const { error } = await supabase.rpc('admin_redrive_rescue_case', { p_sos_report_id: report.id });
+    if (error) {
+      alert(`ส่งค้นหาทีมใหม่ไม่สำเร็จ: ${error.message}`);
+      return;
+    }
+    await fetchReports(page);
+    alert('ระบบเริ่มค้นหาทีมกู้ภัยตามรัศมีปัจจุบันแล้ว');
+  };
+
+  const handoffCase = async (report: SOSReport) => {
+    const reason = window.prompt('ระบุเหตุผลการส่งต่อเคส (จำเป็น และจะบันทึกในประวัติ)');
+    if (!reason?.trim()) return;
+    const { error } = await supabase.rpc('admin_handoff_rescue_case', {
+      p_sos_report_id: report.id,
+      p_reason: reason.trim(),
+    });
+    if (error) {
+      alert(`ส่งต่อเคสไม่สำเร็จ: ${error.message}`);
+      return;
+    }
+    await fetchReports(page);
+    alert('ส่งต่อเคสแล้ว ระบบกำลังค้นหาทีมถัดไป');
+  };
+
   if (loading) return <AdminPanelSkeleton variant="victims" />;
 
   return (
@@ -1157,7 +1182,7 @@ function VictimsTab() {
           );
         })}
       </div>
-      {selectedReport && <VictimDetailPanel report={selectedReport} onClose={() => setSelectedReport(null)} />}
+      {selectedReport && <VictimDetailPanel report={selectedReport} onClose={() => setSelectedReport(null)} onRetryDispatch={retryDispatch} onHandoff={handoffCase} />}
       </div>
       {!loadError && totalCount > 0 && <AdminPagination page={page} totalPages={totalPages} totalCount={totalCount} onPageChange={(nextPage) => void fetchReports(nextPage)} />}
     </div>
@@ -1568,7 +1593,12 @@ function DetailItem({ label, children, wide = false }: { label: string; children
   return <div style={{ gridColumn: wide ? '1 / -1' : undefined, minHeight: 78, padding: '13px 14px', border: '1px solid #DDE7F1', borderRadius: 13, background: 'linear-gradient(145deg, #FBFCFE, #F5F8FC)' }}><small style={{ display: 'block', color: '#7D8597', fontSize: 11 }}>{label}</small><strong style={{ display: 'block', marginTop: 5, color: '#17355A', fontSize: 14, lineHeight: 1.5, overflowWrap: 'anywhere' }}>{children}</strong></div>;
 }
 
-function VictimDetailPanel({ report, onClose }: { report: SOSReport; onClose: () => void }) {
+function VictimDetailPanel({ report, onClose, onRetryDispatch, onHandoff }: {
+  report: SOSReport;
+  onClose: () => void;
+  onRetryDispatch: (report: SOSReport) => Promise<void>;
+  onHandoff: (report: SOSReport) => Promise<void>;
+}) {
   const status = SOS_STATUS_LABEL[report.status] ?? SOS_STATUS_LABEL.pending;
   const totalPeople = (report.adult_count ?? 0) + (report.child_count ?? 0) + (report.elder_count ?? 0);
   const hasCoordinates = report.lat !== null && report.lat !== undefined && report.lng !== null && report.lng !== undefined;
@@ -1585,6 +1615,11 @@ function VictimDetailPanel({ report, onClose }: { report: SOSReport; onClose: ()
       <DetailItem label="ความต้องการพิเศษ / หมายเหตุ" wide>{report.special_needs || 'ไม่ระบุ'}</DetailItem>
       {hasCoordinates && <DetailItem label="พิกัด GPS" wide><a href={`https://www.google.com/maps?q=${report.lat},${report.lng}`} target="_blank" rel="noreferrer" style={{ color: '#0466C8' }}>{report.lat?.toFixed(6)}, {report.lng?.toFixed(6)} · เปิดแผนที่</a></DetailItem>}
     </DetailGrid>
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: 12, border: '1px solid #D9E5F2', borderRadius: 12, background: '#F7FAFE' }}>
+      {(report.status === 'pending' || report.status === 'cannot_reach') && <button type="button" onClick={() => void onRetryDispatch(report)} style={{ padding: '9px 12px', border: '1px solid #8CB8E5', borderRadius: 9, color: '#0353A4', background: '#fff', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>ค้นหาทีมกู้ภัยตอนนี้</button>}
+      {report.status === 'assigned' && <button type="button" onClick={() => void onHandoff(report)} style={{ padding: '9px 12px', border: '1px solid #E8B4A6', borderRadius: 9, color: '#A33A20', background: '#FFF7F4', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>ส่งต่อเคสให้ทีมถัดไป</button>}
+      <span style={{ alignSelf: 'center', color: '#5C677D', fontSize: 11 }}>คำสั่งนี้ตรวจสิทธิ์ผู้ดูแลและบันทึกเหตุผลที่ฐานข้อมูล</span>
+    </div>
   </AdminDetailPanel>;
 }
 
