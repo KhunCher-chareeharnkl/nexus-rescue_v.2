@@ -52,6 +52,22 @@ interface SOSReport {
   updated_at?: string | null;
 }
 
+interface RescueCaseControl {
+  assignment_id: string;
+  rescuer_id: string;
+  rescuer_name: string;
+  agency?: string | null;
+  assignment_status: 'offered' | 'accepted' | 'en_route' | 'on_scene';
+  accepted_at?: string | null;
+  estimated_arrival_minutes?: number | null;
+  eta_deadline?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  location_updated_at?: string | null;
+  location_is_stale: boolean;
+  rescue_is_overdue: boolean;
+}
+
 interface DamageReport {
   id: string;
   full_name: string;
@@ -1593,6 +1609,65 @@ function DetailItem({ label, children, wide = false }: { label: string; children
   return <div style={{ gridColumn: wide ? '1 / -1' : undefined, minHeight: 78, padding: '13px 14px', border: '1px solid #DDE7F1', borderRadius: 13, background: 'linear-gradient(145deg, #FBFCFE, #F5F8FC)' }}><small style={{ display: 'block', color: '#7D8597', fontSize: 11 }}>{label}</small><strong style={{ display: 'block', marginTop: 5, color: '#17355A', fontSize: 14, lineHeight: 1.5, overflowWrap: 'anywhere' }}>{children}</strong></div>;
 }
 
+function RescueCaseControlPanel({ report }: { report: SOSReport }) {
+  const [control, setControl] = useState<RescueCaseControl | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      const { data, error: fetchError } = await supabase.rpc('get_admin_rescue_case_control', { p_sos_report_id: report.id });
+      if (!active) return;
+      if (fetchError) {
+        setError(fetchError.code === 'PGRST202' ? 'ยังไม่ได้ติดตั้งข้อมูลควบคุมภารกิจกู้ภัย' : 'ไม่สามารถโหลดข้อมูลทีมกู้ภัยของเคสนี้ได้');
+        setControl(null);
+      } else {
+        setControl(((data as RescueCaseControl[] | null) ?? [])[0] ?? null);
+        setError('');
+      }
+      setLoading(false);
+    };
+    void load();
+    const timer = window.setInterval(() => { void load(); }, 15_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [report.id]);
+
+  const timeText = (value?: string | null) => value
+    ? new Intl.DateTimeFormat('th-TH', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value))
+    : 'ยังไม่มีข้อมูล';
+  const stageLabel: Record<string, string> = {
+    offered: 'รอทีมยืนยันรับงาน', accepted: 'รับงานแล้ว / เตรียมเดินทาง', en_route: 'กำลังเดินทาง', on_scene: 'ถึงจุดเกิดเหตุแล้ว',
+  };
+
+  return (
+    <section style={{ padding: 14, border: '1px solid #C9DDF0', borderRadius: 14, background: '#F6FAFE' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
+        <div><strong style={{ color: '#002855', fontSize: 14 }}>ศูนย์ควบคุมภารกิจ</strong><p style={{ margin: '3px 0 0', color: '#5C677D', fontSize: 11 }}>รีเฟรชอัตโนมัติทุก 15 วินาที</p></div>
+        {control && <span style={{ padding: '5px 8px', borderRadius: 999, color: '#0353A4', background: '#E4F0FB', fontSize: 11, fontWeight: 800 }}>{stageLabel[control.assignment_status] ?? control.assignment_status}</span>}
+      </div>
+      {loading ? <p style={{ margin: 0, color: '#5C677D', fontSize: 13 }}>กำลังตรวจสอบทีมที่รับผิดชอบ…</p> : error ? <p style={{ margin: 0, color: '#B42318', fontSize: 13 }}>{error}</p> : !control ? (
+        <p style={{ margin: 0, color: '#5C677D', fontSize: 13 }}>{report.status === 'pending' ? 'ยังไม่มีทีมรับเคสนี้ ระบบกำลังค้นหาทีมตามรัศมีและพื้นที่บริการ' : 'ไม่มีภารกิจที่กำลังเปิดสำหรับเคสนี้'}</p>
+      ) : (
+        <>
+          <DetailGrid>
+            <DetailItem label="ทีมที่รับผิดชอบ">{control.agency || control.rescuer_name || 'ไม่ระบุหน่วยงาน'}{control.agency && control.rescuer_name ? ` · ${control.rescuer_name}` : ''}</DetailItem>
+            <DetailItem label="เวลารับภารกิจ">{timeText(control.accepted_at)}</DetailItem>
+            <DetailItem label="ETA ที่เสนอ">{control.estimated_arrival_minutes ? `${control.estimated_arrival_minutes} นาที` : 'ยังไม่ประเมิน'}</DetailItem>
+            <DetailItem label="เส้นตายตรวจสอบ">{timeText(control.eta_deadline)}</DetailItem>
+            <DetailItem label="ตำแหน่งล่าสุด" wide>{control.location_updated_at ? `${timeText(control.location_updated_at)}${control.latitude != null && control.longitude != null ? ` · ${control.latitude.toFixed(5)}, ${control.longitude.toFixed(5)}` : ''}` : 'ทีมยังไม่แชร์ตำแหน่ง'}</DetailItem>
+          </DetailGrid>
+          {(control.rescue_is_overdue || control.location_is_stale) && <div style={{ marginTop: 11, padding: '10px 11px', borderLeft: '4px solid #D92D20', borderRadius: 9, color: '#9E2A1D', background: '#FFF0EE', fontSize: 12, lineHeight: 1.55 }}>
+            <strong>{control.rescue_is_overdue ? 'เกินเวลาเดินทางที่ต้องตรวจสอบ' : 'ตำแหน่งทีมไม่อัปเดตเกิน 5 นาที'}</strong><br />
+            ติดต่อทีมเพื่อยืนยันสถานการณ์ก่อน หากติดต่อไม่ได้หรือช่วยต่อไม่ได้ ให้กด “ส่งต่อเคสให้ทีมถัดไป” ด้านล่าง ระบบจะบันทึกเหตุผลและค้นหาทีมใหม่ทันที
+          </div>}
+          {!control.rescue_is_overdue && !control.location_is_stale && <p style={{ margin: '10px 0 0', color: '#167B4C', fontSize: 12, fontWeight: 700 }}>✓ ทีมยังรายงานตำแหน่งและอยู่ในกรอบเวลาที่ต้องติดตาม</p>}
+        </>
+      )}
+    </section>
+  );
+}
+
 function VictimDetailPanel({ report, onClose, onRetryDispatch, onHandoff }: {
   report: SOSReport;
   onClose: () => void;
@@ -1615,6 +1690,7 @@ function VictimDetailPanel({ report, onClose, onRetryDispatch, onHandoff }: {
       <DetailItem label="ความต้องการพิเศษ / หมายเหตุ" wide>{report.special_needs || 'ไม่ระบุ'}</DetailItem>
       {hasCoordinates && <DetailItem label="พิกัด GPS" wide><a href={`https://www.google.com/maps?q=${report.lat},${report.lng}`} target="_blank" rel="noreferrer" style={{ color: '#0466C8' }}>{report.lat?.toFixed(6)}, {report.lng?.toFixed(6)} · เปิดแผนที่</a></DetailItem>}
     </DetailGrid>
+    {(report.status === 'pending' || report.status === 'assigned' || report.status === 'cannot_reach') && <RescueCaseControlPanel report={report} />}
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: 12, border: '1px solid #D9E5F2', borderRadius: 12, background: '#F7FAFE' }}>
       {(report.status === 'pending' || report.status === 'cannot_reach') && <button type="button" onClick={() => void onRetryDispatch(report)} style={{ padding: '9px 12px', border: '1px solid #8CB8E5', borderRadius: 9, color: '#0353A4', background: '#fff', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>ค้นหาทีมกู้ภัยตอนนี้</button>}
       {report.status === 'assigned' && <button type="button" onClick={() => void onHandoff(report)} style={{ padding: '9px 12px', border: '1px solid #E8B4A6', borderRadius: 9, color: '#A33A20', background: '#FFF7F4', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>ส่งต่อเคสให้ทีมถัดไป</button>}
