@@ -60,12 +60,15 @@ interface RescueCaseControl {
   assignment_status: 'offered' | 'accepted' | 'en_route' | 'on_scene';
   accepted_at?: string | null;
   estimated_arrival_minutes?: number | null;
-  eta_deadline?: string | null;
+  arrival_target_at?: string | null;
+  escalation_at?: string | null;
+  resolution_review_at?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   location_updated_at?: string | null;
   location_is_stale: boolean;
-  rescue_is_overdue: boolean;
+  arrival_is_overdue: boolean;
+  resolution_is_overdue: boolean;
 }
 
 interface DamageReport {
@@ -1617,7 +1620,7 @@ function RescueCaseControlPanel({ report }: { report: SOSReport }) {
   useEffect(() => {
     let active = true;
     const load = async () => {
-      const { data, error: fetchError } = await supabase.rpc('get_admin_rescue_case_control', { p_sos_report_id: report.id });
+      const { data, error: fetchError } = await supabase.rpc('get_admin_rescue_case_control_v2', { p_sos_report_id: report.id });
       if (!active) return;
       if (fetchError) {
         setError(fetchError.code === 'PGRST202' ? 'ยังไม่ได้ติดตั้งข้อมูลควบคุมภารกิจกู้ภัย' : 'ไม่สามารถโหลดข้อมูลทีมกู้ภัยของเคสนี้ได้');
@@ -1653,15 +1656,17 @@ function RescueCaseControlPanel({ report }: { report: SOSReport }) {
           <DetailGrid>
             <DetailItem label="ทีมที่รับผิดชอบ">{control.agency || control.rescuer_name || 'ไม่ระบุหน่วยงาน'}{control.agency && control.rescuer_name ? ` · ${control.rescuer_name}` : ''}</DetailItem>
             <DetailItem label="เวลารับภารกิจ">{timeText(control.accepted_at)}</DetailItem>
-            <DetailItem label="ETA ที่เสนอ">{control.estimated_arrival_minutes ? `${control.estimated_arrival_minutes} นาที` : 'ยังไม่ประเมิน'}</DetailItem>
-            <DetailItem label="เส้นตายตรวจสอบ">{timeText(control.eta_deadline)}</DetailItem>
+            <DetailItem label="เวลาถึงโดยประมาณ">{control.estimated_arrival_minutes ? `${control.estimated_arrival_minutes} นาที` : 'ยังไม่ประเมิน'}</DetailItem>
+            <DetailItem label="เป้าหมายถึงจุดเกิดเหตุ">{timeText(control.arrival_target_at)}</DetailItem>
+            <DetailItem label="เริ่มยกระดับให้ตรวจสอบ">{timeText(control.escalation_at)}</DetailItem>
+            <DetailItem label="เป้าหมายสรุปเคส (โดยประมาณ)">{timeText(control.resolution_review_at)}</DetailItem>
             <DetailItem label="ตำแหน่งล่าสุด" wide>{control.location_updated_at ? `${timeText(control.location_updated_at)}${control.latitude != null && control.longitude != null ? ` · ${control.latitude.toFixed(5)}, ${control.longitude.toFixed(5)}` : ''}` : 'ทีมยังไม่แชร์ตำแหน่ง'}</DetailItem>
           </DetailGrid>
-          {(control.rescue_is_overdue || control.location_is_stale) && <div style={{ marginTop: 11, padding: '10px 11px', borderLeft: '4px solid #D92D20', borderRadius: 9, color: '#9E2A1D', background: '#FFF0EE', fontSize: 12, lineHeight: 1.55 }}>
-            <strong>{control.rescue_is_overdue ? 'เกินเวลาเดินทางที่ต้องตรวจสอบ' : 'ตำแหน่งทีมไม่อัปเดตเกิน 5 นาที'}</strong><br />
+          {(control.arrival_is_overdue || control.resolution_is_overdue || control.location_is_stale) && <div style={{ marginTop: 11, padding: '10px 11px', borderLeft: '4px solid #D92D20', borderRadius: 9, color: '#9E2A1D', background: '#FFF0EE', fontSize: 12, lineHeight: 1.55 }}>
+            <strong>{control.resolution_is_overdue ? 'เกินเป้าหมายสรุปเคส' : control.arrival_is_overdue ? 'เกินเวลาเดินทางที่ต้องตรวจสอบ' : 'ตำแหน่งทีมไม่อัปเดตเกิน 5 นาที'}</strong><br />
             ติดต่อทีมเพื่อยืนยันสถานการณ์ก่อน หากติดต่อไม่ได้หรือช่วยต่อไม่ได้ ให้กด “ส่งต่อเคสให้ทีมถัดไป” ด้านล่าง ระบบจะบันทึกเหตุผลและค้นหาทีมใหม่ทันที
           </div>}
-          {!control.rescue_is_overdue && !control.location_is_stale && <p style={{ margin: '10px 0 0', color: '#167B4C', fontSize: 12, fontWeight: 700 }}>✓ ทีมยังรายงานตำแหน่งและอยู่ในกรอบเวลาที่ต้องติดตาม</p>}
+          {!control.arrival_is_overdue && !control.resolution_is_overdue && !control.location_is_stale && <p style={{ margin: '10px 0 0', color: '#167B4C', fontSize: 12, fontWeight: 700 }}>✓ ทีมยังรายงานตำแหน่งและอยู่ในกรอบเวลาที่ต้องติดตาม</p>}
         </>
       )}
     </section>
