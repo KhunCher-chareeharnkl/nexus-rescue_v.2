@@ -1637,7 +1637,7 @@ function RescueCaseControlPanel({ report }: { report: SOSReport }) {
   }, [report.id]);
 
   const timeText = (value?: string | null) => value
-    ? new Intl.DateTimeFormat('th-TH', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value))
+    ? new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
     : 'ยังไม่มีข้อมูล';
   const stageLabel: Record<string, string> = {
     offered: 'รอทีมยืนยันรับงาน', accepted: 'รับงานแล้ว / เตรียมเดินทาง', en_route: 'กำลังเดินทาง', on_scene: 'ถึงจุดเกิดเหตุแล้ว',
@@ -1654,17 +1654,21 @@ function RescueCaseControlPanel({ report }: { report: SOSReport }) {
       ) : (
         <>
           <DetailGrid>
-            <DetailItem label="ทีมที่รับผิดชอบ">{control.agency || control.rescuer_name || 'ไม่ระบุหน่วยงาน'}{control.agency && control.rescuer_name ? ` · ${control.rescuer_name}` : ''}</DetailItem>
-            <DetailItem label="เวลารับภารกิจ">{timeText(control.accepted_at)}</DetailItem>
-            <DetailItem label="เวลาถึงโดยประมาณ">{control.estimated_arrival_minutes ? `${control.estimated_arrival_minutes} นาที` : 'ยังไม่ประเมิน'}</DetailItem>
-            <DetailItem label="เป้าหมายถึงจุดเกิดเหตุ">{timeText(control.arrival_target_at)}</DetailItem>
-            <DetailItem label="เริ่มยกระดับให้ตรวจสอบ">{timeText(control.escalation_at)}</DetailItem>
-            <DetailItem label="เป้าหมายสรุปเคส (โดยประมาณ)">{timeText(control.resolution_review_at)}</DetailItem>
+            <DetailItem label="ผู้รับภารกิจ">{control.rescuer_name || 'ไม่ระบุชื่อ'}{control.agency ? ` · ${control.agency}` : ''}</DetailItem>
+            <DetailItem label="เวลากดรับงาน">{control.accepted_at ? timeText(control.accepted_at) : 'ทีมยังไม่ได้กดรับงาน'}</DetailItem>
+            <DetailItem label="เวลาเดินทางโดยประมาณ">{control.estimated_arrival_minutes != null ? `${control.estimated_arrival_minutes} นาที` : 'ยังไม่ประเมิน'}</DetailItem>
+            <DetailItem label="คาดว่าจะถึงจุดเกิดเหตุ">{control.arrival_target_at ? timeText(control.arrival_target_at) : 'แสดงหลังทีมกดรับงาน'}</DetailItem>
+            <DetailItem label="กำหนดตรวจสอบหากล่าช้า">{control.escalation_at ? timeText(control.escalation_at) : 'เริ่มนับหลังทีมกดรับงาน'}</DetailItem>
+            <DetailItem label="กรอบเวลาติดตามเคส">{timeText(control.resolution_review_at)}</DetailItem>
             <DetailItem label="ตำแหน่งล่าสุด" wide>{control.location_updated_at ? `${timeText(control.location_updated_at)}${control.latitude != null && control.longitude != null ? ` · ${control.latitude.toFixed(5)}, ${control.longitude.toFixed(5)}` : ''}` : 'ทีมยังไม่แชร์ตำแหน่ง'}</DetailItem>
           </DetailGrid>
           {(control.arrival_is_overdue || control.resolution_is_overdue || control.location_is_stale) && <div style={{ marginTop: 11, padding: '10px 11px', borderLeft: '4px solid #D92D20', borderRadius: 9, color: '#9E2A1D', background: '#FFF0EE', fontSize: 12, lineHeight: 1.55 }}>
-            <strong>{control.resolution_is_overdue ? 'เกินเป้าหมายสรุปเคส' : control.arrival_is_overdue ? 'เกินเวลาเดินทางที่ต้องตรวจสอบ' : 'ตำแหน่งทีมไม่อัปเดตเกิน 5 นาที'}</strong><br />
-            ติดต่อทีมเพื่อยืนยันสถานการณ์ก่อน หากติดต่อไม่ได้หรือช่วยต่อไม่ได้ ให้กด “ส่งต่อเคสให้ทีมถัดไป” ด้านล่าง ระบบจะบันทึกเหตุผลและค้นหาทีมใหม่ทันที
+            <strong>{control.resolution_is_overdue ? 'เกินเป้าหมายสรุปเคส' : control.arrival_is_overdue && control.location_is_stale ? 'เกินกำหนด แต่ GPS ไม่อัปเดต — พักการส่งต่ออัตโนมัติ' : control.arrival_is_overdue ? 'เกินกำหนดถึงจุดเกิดเหตุ' : 'ตำแหน่งทีมไม่อัปเดตเกิน 5 นาที'}</strong><br />
+            {control.arrival_is_overdue && control.location_is_stale
+              ? 'ระบบแจ้งแอดมินและพักการส่งต่อไว้จนกว่าจะตรวจสอบตำแหน่งได้ กรุณาติดต่อทีม หากยืนยันว่าไม่สามารถไปต่อ ให้ใช้ปุ่มส่งต่อด้านล่าง'
+              : control.arrival_is_overdue
+                ? 'ระบบจะส่งต่องานให้อัตโนมัติเมื่อ GPS ยังยืนยันไม่ได้ว่าทีมอยู่ในระยะ 500 เมตรจากจุดเกิดเหตุ'
+                : 'กรุณาติดต่อทีมเพื่อตรวจสอบสถานการณ์ หากติดต่อไม่ได้หรือช่วยต่อไม่ได้ ให้กด “ส่งต่อเคสให้ทีมถัดไป” ด้านล่าง'}
           </div>}
           {!control.arrival_is_overdue && !control.resolution_is_overdue && !control.location_is_stale && <p style={{ margin: '10px 0 0', color: '#167B4C', fontSize: 12, fontWeight: 700 }}>✓ ทีมยังรายงานตำแหน่งและอยู่ในกรอบเวลาที่ต้องติดตาม</p>}
         </>

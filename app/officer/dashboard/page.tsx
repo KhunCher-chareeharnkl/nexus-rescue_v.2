@@ -346,17 +346,18 @@ export default function OfficerDashboard() {
     init();
   }, [router]);
 
-  // A starting point is saved after sign-in; live updates run only while the
-  // rescuer explicitly opts into dispatch. The database rejects stale points
-  // for automatic assignment after two minutes.
+  // Keep live location fresh while available and during an active mission so
+  // the control room can verify arrival and safely reassign overdue cases.
   useEffect(() => {
-    if (!profile || availability !== 'available' || !navigator.geolocation) return;
+    if (!profile || (availability !== 'available' && availability !== 'busy') || !navigator.geolocation) return;
 
     const publish = ({ coords }: GeolocationPosition) => {
       const location = { lat: coords.latitude, lng: coords.longitude };
       setMyCoords(location);
       void supabase.rpc('set_rescuer_presence', {
-        p_availability: 'available', p_latitude: location.lat, p_longitude: location.lng,
+        p_availability: availability, p_latitude: location.lat, p_longitude: location.lng,
+      }).then(({ error }) => {
+        if (error) console.error('Unable to publish current rescuer location', error);
       });
     };
     const watchId = navigator.geolocation.watchPosition(publish, () => {}, {
