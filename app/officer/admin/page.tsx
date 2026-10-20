@@ -496,27 +496,27 @@ export default function AdminPage() {
         .admin-brand { display:flex; align-items:center; gap:12px; }
         .admin-brand-mark { width:42px !important; height:42px !important; border-radius:14px !important; background:var(--ink) !important; color:#fff; font-size:16px !important; box-shadow:0 8px 18px rgba(23,52,60,.18); }
         .admin-brand-title { max-width:285px; font-size:15px !important; font-weight:800 !important; line-height:1.35; color:var(--ink) !important; }
-        .admin-brand-user { font-size:11px !important; color:var(--muted) !important; }
+        .admin-brand-user { font-size:13px !important; color:var(--muted) !important; }
         .admin-logout { display:inline-flex; align-items:center; gap:7px; padding:9px 14px !important; border:1px solid var(--line) !important; border-radius:12px !important; background:#fff !important; color:var(--slate-mid) !important; font-family:inherit; cursor:pointer; transition:.2s ease; }
         .admin-logout:hover { color:var(--primary-strong) !important; border-color:#B8CBE0 !important; background:#F2F6FB !important; transform:translateY(-1px); }
         .admin-layout { max-width:1440px !important; margin:0 auto; padding:28px !important; display:grid; grid-template-columns:220px minmax(0,1fr); gap:28px; align-items:start; }
         .admin-sidebar { position:sticky; top:100px; background:var(--ink); border-radius:22px; padding:18px 12px; box-shadow:0 18px 40px rgba(23,52,60,.13); }
-        .admin-sidebar-label { padding:4px 12px 13px; font-size:10px; font-weight:800; letter-spacing:.13em; color:rgba(255,255,255,.45); }
+        .admin-sidebar-label { padding:4px 12px 13px; font-size:13px; font-weight:800; letter-spacing:.08em; color:rgba(255,255,255,.72); }
         .admin-nav { display:grid !important; gap:6px !important; margin:0 !important; }
-        .admin-tab { width:100%; display:flex; align-items:center; padding:11px 13px; border:0; border-radius:13px; background:transparent; color:rgba(255,255,255,.68); font-family:inherit; font-size:13px; font-weight:650; text-align:left; cursor:pointer; transition:.2s ease; }
+        .admin-tab { width:100%; display:flex; align-items:center; padding:11px 13px; border:0; border-radius:13px; background:transparent; color:rgba(255,255,255,.78); font-family:inherit; font-size:15px; font-weight:650; text-align:left; cursor:pointer; transition:.2s ease; }
         .admin-tab:hover { background:rgba(255,255,255,.09); color:#fff; transform:translateX(2px); }
         .admin-tab.active { background:#fff; color:var(--ink); box-shadow:0 8px 18px rgba(0,0,0,.12); }
         .admin-workspace { min-width:0; }
         .admin-page-heading { display:flex; justify-content:space-between; gap:20px; align-items:flex-end; margin:2px 0 22px; }
-        .admin-eyebrow { display:flex; align-items:center; gap:7px; margin-bottom:7px; font-size:10px; color:var(--primary); font-weight:850; letter-spacing:.12em; }
+        .admin-eyebrow { display:flex; align-items:center; gap:7px; margin-bottom:7px; font-size:13px; color:var(--primary); font-weight:850; letter-spacing:.08em; }
         .admin-eyebrow::before { content:''; width:7px; height:7px; border-radius:50%; background:var(--primary); box-shadow:0 0 0 5px rgba(4,102,200,.1); }
         .admin-page-heading h1 { margin:0; font-size:clamp(24px,3vw,31px); line-height:1.2; letter-spacing:-.035em; color:var(--ink); }
-        .admin-page-heading p { margin:6px 0 0; color:var(--muted); font-size:13px; }
-        .admin-date { flex-shrink:0; padding:9px 13px; border:1px solid var(--line); border-radius:12px; background:#fff; font-size:11px; color:var(--muted); }
+        .admin-page-heading p { margin:6px 0 0; color:var(--muted); font-size:15px; }
+        .admin-date { flex-shrink:0; padding:9px 13px; border:1px solid var(--line); border-radius:12px; background:#fff; font-size:14px; color:var(--muted); }
         .admin-content { animation:admin-enter .28s ease both; }
-        .admin-panel input,.admin-panel select { min-height:42px; border:1px solid var(--line) !important; border-radius:12px !important; background:#fff !important; color:var(--ink); outline:none; transition:border-color .2s,box-shadow .2s; }
+        .admin-panel input,.admin-panel select { min-height:46px; border:1px solid var(--line) !important; border-radius:12px !important; background:#fff !important; color:var(--ink); font-size:15px !important; outline:none; transition:border-color .2s,box-shadow .2s; }
         .admin-panel input:focus,.admin-panel select:focus { border-color:rgba(4,102,200,.65) !important; box-shadow:0 0 0 4px rgba(4,102,200,.09); }
-        .admin-panel button { font-family:inherit; transition:transform .18s ease,box-shadow .18s ease,filter .18s ease; }
+        .admin-panel button { font-family:inherit; font-size:14px; transition:transform .18s ease,box-shadow .18s ease,filter .18s ease; }
         .admin-panel button:hover:not(:disabled) { transform:translateY(-1px); filter:saturate(1.04); }
         .admin-panel button:active:not(:disabled) { transform:scale(.985); }
         .admin-summary-grid { gap:12px !important; margin-bottom:18px !important; }
@@ -613,6 +613,39 @@ export default function AdminPage() {
         @media(max-width:720px){.admin-header{padding:0 15px !important}.admin-header-inner{grid-template-columns:1fr auto;gap:8px;padding-top:8px}.admin-brand{min-height:52px}.admin-top-nav{grid-column:1/-1;grid-row:2;padding:6px 0 10px;justify-content:flex-start}.admin-logout{grid-column:2;grid-row:1}.admin-layout{padding:20px 13px 36px !important}.overview-hero{grid-template-columns:1fr;padding:24px;gap:22px}.overview-grid,.overview-bottom{gap:13px;margin-top:13px}.flow-row{grid-template-columns:78px minmax(0,1fr) 28px}.claim-legend{grid-template-columns:repeat(2,1fr)}.admin-date{display:none}.admin-victim-row,.admin-claim-row{grid-template-columns:minmax(0,1fr) auto !important}.admin-victim-row > button,.admin-claim-row > button{grid-column:1/-1;width:100%}.admin-victim-row-copy > div,.admin-claim-row-copy > div{white-space:normal}}
         @media(max-width:480px){.admin-brand-user{max-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.admin-logout{padding:8px 9px !important;font-size:0 !important}.admin-logout span{font-size:14px}.admin-page-heading{align-items:flex-start}.admin-page-heading h1{font-size:24px}.overview-hero-numbers{grid-template-columns:1fr 1fr}.workforce-list{grid-template-columns:1fr;gap:12px}.workforce-item{padding:10px 0 0;border:0;border-top:1px solid rgba(255,255,255,.16)}.workforce-item:first-child{padding-top:0;border:0}.admin-summary-grid,.admin-status-grid{grid-template-columns:repeat(2,minmax(0,1fr)) !important}.admin-toolbar input,.admin-toolbar select{max-width:none !important;width:100% !important}.admin-row{align-items:flex-start !important}.admin-panel [style*='repeat(3']{grid-template-columns:1fr !important}}
         @media(max-width:720px){.admin-victim-row{grid-template-columns:minmax(0,1fr) auto auto !important}.admin-victim-row .victim-status-badge{grid-column:2}.admin-victim-row .victim-severity-badge{grid-column:3}.admin-victim-row > button{grid-column:1/-1;width:100%}}
+        .admin-header { height:auto; padding:0 30px !important; }
+        .admin-header-inner { height:auto !important; min-height:0 !important; max-width:1600px !important; grid-template-columns:minmax(0,1fr) auto !important; grid-template-rows:66px auto; gap:0 20px !important; }
+        .admin-brand-title { max-width:none; white-space:normal; }
+        .admin-top-nav { grid-column:1/-1; grid-row:2; justify-content:center; gap:7px; overflow-x:auto; padding:0 0 12px; scrollbar-width:thin; }
+        .admin-top-nav .admin-tab { flex:0 0 auto; padding:9px 14px; border-radius:12px; }
+        .admin-top-nav .admin-tab.active { box-shadow:0 5px 13px rgba(4,102,200,.18); }
+        .admin-layout { max-width:1600px !important; padding:30px 30px 48px !important; }
+        .admin-page-heading { padding:0 2px 18px; border-bottom:1px solid #E3EAF2; }
+        .admin-content { min-width:0; }
+        .admin-panel { min-width:0; }
+        .admin-panel :focus-visible,.admin-top-nav .admin-tab:focus-visible,.admin-logout:focus-visible { outline:3px solid rgba(4,102,200,.42); outline-offset:3px; }
+        .admin-panel [style*="font-size: 8px"],.admin-panel [style*="font-size: 9px"],.admin-panel [style*="font-size: 10px"],.admin-panel [style*="font-size: 11px"],.admin-panel [style*="font-size: 12px"],.admin-panel [style*="font-size: 13px"] { font-size:14px !important; line-height:1.5; }
+        .admin-panel small,.admin-panel time { font-size:13px !important; line-height:1.5; }
+        .overview-live,.overview-hero-number span,.overview-panel-head span,.flow-label,.flow-value,.capacity-ring-content span,.capacity-caption,.capacity-sub,.workforce-band > p,.workforce-item span,.claim-board-head p,.claim-total small,.claim-legend-item,.claim-legend-item b,.urgent-inline { font-size:14px; line-height:1.5; }
+        .overview-hero p { font-size:15px; }
+        .admin-summary-card,.admin-stat-card,.admin-victim-row-copy,.admin-claim-row-copy { line-height:1.55; }
+        @media(max-width:720px) {
+          .admin-header { padding:0 15px !important; }
+          .admin-header-inner { grid-template-columns:minmax(0,1fr) auto !important; grid-template-rows:58px auto; gap:0 8px !important; }
+          .admin-top-nav { grid-column:1/-1; grid-row:2; justify-content:flex-start; margin:0 -2px; padding:2px 2px 10px; }
+          .admin-layout { padding:20px 15px 36px !important; }
+          .admin-page-heading { padding-bottom:15px; margin-bottom:17px; }
+        }
+        @media(prefers-reduced-motion:reduce) {
+          .admin-content,.flow-fill { animation:none !important; }
+          .admin-tab,.admin-panel button,.admin-summary-card,.admin-stat-card { transition:none !important; }
+        }
+        .urgency-sort { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; width:100%; }
+        .urgency-sort-button { min-height:58px; display:flex; align-items:center; justify-content:center; gap:9px; padding:11px 14px; border:1px solid var(--urgency-border) !important; border-radius:15px !important; background:var(--urgency-bg) !important; color:var(--urgency-color) !important; font:inherit; font-size:14px; font-weight:800; cursor:pointer; transition:transform .18s ease,box-shadow .18s ease,outline-color .18s ease; }
+        .urgency-sort-button:hover { transform:translateY(-2px); box-shadow:0 8px 18px color-mix(in srgb,var(--urgency-color) 15%,transparent); }
+        .urgency-sort-button[aria-pressed="true"] { outline:3px solid color-mix(in srgb,var(--urgency-color) 22%,transparent); outline-offset:1px; box-shadow:0 6px 15px color-mix(in srgb,var(--urgency-color) 16%,transparent); }
+        .urgency-sort-button small { font-size:13px; font-weight:650; opacity:.88; }
+        @media(max-width:720px) { .urgency-sort { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; } .urgency-sort-button { min-height:58px; font-size:14px; } }
       `}</style>
       <div className="admin-shell" style={{ minHeight: '100vh', background: '#F5F8FC', fontFamily: "var(--font-thai), 'IBM Plex Sans Thai', sans-serif" }}>
 
@@ -630,9 +663,9 @@ export default function AdminPage() {
               <TabButton active={tab === 'users'} onClick={() => setTab('users')} label="ผู้ใช้งาน" />
               <TabButton active={tab === 'shelters'} onClick={() => setTab('shelters')} label="ศูนย์พักพิง" />
               <TabButton active={tab === 'victims'} onClick={() => setTab('victims')} label="ผู้ประสบภัย" />
+              <TabButton active={tab === 'rescue_map'} onClick={() => setTab('rescue_map')} label="แผนที่กู้ภัย" />
               <TabButton active={tab === 'compensation'} onClick={() => setTab('compensation')} label="เยียวยา" />
               <TabButton active={tab === 'governance'} onClick={() => setTab('governance')} label="กำกับ" />
-              <TabButton active={tab === 'rescue_map'} onClick={() => setTab('rescue_map')} label="แผนที่กู้ภัย" />
             </nav>
             <button className="admin-logout" onClick={handleLogout} style={{ padding: '7px 14px', borderRadius: 10, border: '1px solid #DDE3EC', background: '#fff', fontSize: 13, fontWeight: 600, color: '#5C677D', cursor: 'pointer' }}>
               <span aria-hidden="true">↗</span> ออกจากระบบ
@@ -650,7 +683,7 @@ export default function AdminPage() {
               </div>
               <div className="admin-date">{new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium' }).format(new Date())}</div>
             </div>
-            <div className="admin-content" key={tab}>
+            <div className="admin-content" id="admin-workspace-panel" key={tab}>
               {tab === 'overview' && <OverviewTab />}
               {tab === 'rescue_map' && <AdminRescuerMapPanel />}
               {tab === 'users' && <UsersTab />}
@@ -765,6 +798,8 @@ function TabButton({ active, onClick, label }: { active: boolean; onClick: () =>
     <button
       className={`admin-tab ${active ? 'active' : ''}`}
       onClick={onClick}
+      aria-current={active ? 'page' : undefined}
+      aria-controls="admin-workspace-panel"
     >
       {label}
     </button>
@@ -1089,6 +1124,7 @@ function VictimsTab() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
   const [search, setSearch] = useState('');
+  const [urgencyPriority, setUrgencyPriority] = useState('critical');
   const [selectedReport, setSelectedReport] = useState<SOSReport | null>(null);
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
@@ -1131,7 +1167,18 @@ function VictimsTab() {
   }, [statusFilter, search]);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / ADMIN_PAGE_SIZE));
-  const filtered = reports;
+  const urgencyOrder = ['critical', 'high', 'medium', 'low'];
+  const filtered = [...reports].sort((a, b) => {
+    const aCompleted = a.status === 'rescued';
+    const bCompleted = b.status === 'rescued';
+    if (aCompleted !== bCompleted) return aCompleted ? 1 : -1;
+    const rank = (level: string) => level === urgencyPriority
+      ? -1
+      : urgencyOrder.indexOf(level) === -1 ? urgencyOrder.length : urgencyOrder.indexOf(level);
+    const urgencyDifference = rank(a.urgency_level) - rank(b.urgency_level);
+    if (urgencyDifference !== 0) return urgencyDifference;
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
 
   const retryDispatch = async (report: SOSReport) => {
     const { error } = await supabase.rpc('admin_redrive_rescue_case', { p_sos_report_id: report.id });
@@ -1162,17 +1209,38 @@ function VictimsTab() {
 
   return (
     <div className="admin-panel admin-victims">
-      <div className="admin-toolbar" style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-        <div aria-label="คำอธิบายระดับความเร่งด่วน" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', fontSize: 11, fontWeight: 700, color: '#475569' }}>
-          <span>ความเร่งด่วน:</span>
-          {Object.values(URGENCY_LABEL).map((urgency) => <span key={urgency.text} style={{ padding: '4px 8px', borderRadius: 999, color: urgency.color, background: urgency.bg }}>{urgency.text}</span>)}
+      <div className="admin-toolbar" style={{ display: 'grid', gap: 12, marginBottom: 14 }}>
+        <div className="urgency-sort" role="group" aria-label="จัดเรียงตามระดับความเร่งด่วน">
+          {urgencyOrder.map((level) => {
+            const urgency = URGENCY_LABEL[level];
+            const selected = urgencyPriority === level;
+            return (
+              <button
+                className="urgency-sort-button"
+                key={level}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => setUrgencyPriority(level)}
+                style={{
+                  '--urgency-color': urgency.color,
+                  '--urgency-bg': urgency.bg,
+                  '--urgency-border': `${urgency.color}30`,
+                } as React.CSSProperties}
+              >
+                <span>{urgency.text}</span>
+                <small>{selected ? 'แสดงก่อน' : 'จัดลำดับก่อน'}</small>
+              </button>
+            );
+          })}
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <input placeholder="🔍 ค้นหาชื่อหรือเบอร์โทร" value={search} onChange={e => setSearch(e.target.value)} style={{ ...inputStyle, maxWidth: 240 }} />
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ ...inputStyle, maxWidth: 180 }}>
           <option value="all">ทุกสถานะ</option>
           {Object.entries(SOS_STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v.text}</option>)}
         </select>
         <button type="button" onClick={() => void fetchReports(page)} disabled={refreshing} style={{ padding: '9px 13px', border: '1px solid #BAD4EE', borderRadius: 10, color: '#0466C8', background: '#F5FAFF', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{refreshing ? 'กำลังรีเฟรช…' : 'รีเฟรช'}</button>
+        </div>
       </div>
 
       <div className={`admin-detail-workspace ${selectedReport ? 'is-open' : ''}`}>

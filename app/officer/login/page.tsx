@@ -177,14 +177,17 @@ export default function OfficerLogin() {
       setOtpSent(true);
       setMessage({
         type: 'success',
-        text: 'ส่งลิงก์เข้าสู่ระบบไปยังอีเมลแล้ว หากลิงก์เปิดไม่ได้ ให้ใช้รหัส 6 หลักจากอีเมลด้านล่างแทน',
+        text: 'ส่งลิงก์เข้าสู่ระบบไปยังอีเมลแล้ว หากลิงก์เปิดไม่ได้ ให้ใช้รหัส OTP 8 หลักจากอีเมลด้านล่างแทน',
       });
     }
   };
 
   const handleVerifyEmailCode = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!emailOtp.trim() || !email.trim()) return;
+    if (!/^\d{8}$/.test(emailOtp) || !email.trim()) {
+      setMessage({ type: 'error', text: 'กรุณากรอกรหัส OTP 8 หลักจากอีเมล' });
+      return;
+    }
     setLoading(true);
     setMessage(null);
     const { error } = await supabase.auth.verifyOtp({
@@ -361,7 +364,7 @@ export default function OfficerLogin() {
                   </label>
 
                   <button className="login-submit" type="submit" disabled={loading}>
-                    <span>{loading ? 'กำลังตรวจสอบข้อมูล...' : 'ยืนยันและรับลิงก์เข้าสู่ระบบ'}</span>
+                    <span>{loading ? 'กำลังตรวจสอบข้อมูล...' : 'ยืนยันและรับรหัส OTP 8 หลัก'}</span>
                     {!loading && <ArrowRight size={17} />}
                   </button>
                 </form>
@@ -370,10 +373,10 @@ export default function OfficerLogin() {
               {otpSent && (
                 <form className="login-form" onSubmit={handleVerifyEmailCode} style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #DDE3EC' }}>
                   <label className="login-field">
-                    <span>รหัสยืนยัน 6 หลัก (ใช้แทนลิงก์ได้)</span>
-                    <div className="login-control"><KeyRound size={17} /><input inputMode="numeric" pattern="[0-9]*" maxLength={8} placeholder="เช่น 123456" value={emailOtp} onChange={(event) => setEmailOtp(event.target.value.replace(/\s/g, ''))} autoComplete="one-time-code" /></div>
+                    <span>รหัส OTP 8 หลัก (ใช้แทนลิงก์ได้)</span>
+                    <div className="login-control"><KeyRound size={17} /><input type="text" inputMode="numeric" pattern="[0-9]{8}" maxLength={8} placeholder="เช่น 12345678" value={emailOtp} onChange={(event) => setEmailOtp(event.target.value.replace(/\D/g, '').slice(0, 8))} autoComplete="one-time-code" /></div>
                   </label>
-                  <button className="login-submit" type="submit" disabled={loading || !emailOtp.trim()}>
+                  <button className="login-submit" type="submit" disabled={loading || !/^\d{8}$/.test(emailOtp)}>
                     <span>{loading ? 'กำลังยืนยันรหัส...' : 'ยืนยันด้วยรหัส'}</span>
                     {!loading && <CheckCircle2 size={17} />}
                   </button>

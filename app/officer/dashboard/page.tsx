@@ -1083,21 +1083,23 @@ export default function OfficerDashboard() {
         .outcome-backdrop{align-items:center!important;padding:20px}.outcome-sheet{border-radius:22px!important;max-width:540px!important;max-height:88vh!important;box-shadow:0 25px 70px rgba(0,18,51,.3)!important}.outcome-sheet input,.outcome-sheet select,.outcome-sheet textarea,.outcome-sheet button{font-size:14px!important}.outcome-sheet [style*="font-size: 10"],.outcome-sheet [style*="font-size: 11"],.outcome-sheet [style*="font-size: 12"]{font-size:13px!important}
         .mission-meta{display:flex;align-items:center;gap:6px;margin-top:6px}.mission-priority,.mission-status{display:inline-flex;align-items:center;padding:3px 7px;border-radius:999px;font-size:11px;font-weight:800;line-height:1}.mission-priority.urgency-critical{color:#B42318;background:#FEE4E2}.mission-priority.urgency-high{color:#C2410C;background:#FFF0E5}.mission-priority.urgency-medium{color:#A16207;background:#FFF7D6}.mission-priority.urgency-low{color:#047857;background:#E8F8F0}.mission-status.status-pending{color:#9A3412;background:#FFF1E8}.mission-status.status-assigned{color:#1D4ED8;background:#EAF2FF}.mission-status.status-rescued{color:#047857;background:#E8F8F0}.mission-status.status-cannot_reach{color:#A16207;background:#FFF7D6}.mission-status.status-closed{color:#475569;background:#EEF2F6}
         @media(max-width:760px){.rescue-app{padding-left:0;padding-bottom:0}.rescue-app>header{padding:13px 14px!important}.rescue-app>header>div>div:last-child{gap:7px!important}.rescue-app>header button{padding:8px 9px!important;font-size:12px!important}.dashboard-overview{grid-template-columns:1fr}.operation-hero{min-height:192px;padding:22px}.rescue-app main{padding:17px 13px 28px!important}.filter-label{width:100%;margin:0 4px 2px}.district-filter{margin-left:0!important;width:100%}.mission-row{grid-template-columns:minmax(0,1fr) 86px}.mission-open{padding-left:16px}.mission-map{font-size:12px}.mission-modal-backdrop{padding:11px}.mission-modal{max-height:92vh;border-radius:20px}.mission-modal-grid{grid-template-columns:1fr}.mission-modal-grid .wide{grid-column:auto}.active-mission-top{padding:14px}.active-mission-hero{padding:22px 16px 19px}.active-mission-hero h1{font-size:24px}.active-progress{padding:18px 12px 14px}.active-progress-step{font-size:9px}.active-progress-step:not(:last-child)::after{left:57%;width:84%}.active-mission-content{padding:12px 11px 22px}.active-info-card h3{font-size:16px}.active-action-bar{grid-template-columns:1fr 1.25fr;padding:10px 11px}.active-action-bar button{min-height:48px;font-size:13px}}
+        .rescue-header-inner{width:100%;gap:14px}.rescue-header-identity{min-width:0;flex:1 1 260px}.rescue-header-actions{min-width:0;display:flex;align-items:center;gap:12px}.rescue-availability-area{min-width:0;display:grid;gap:5px}.rescue-availability-buttons{display:flex;gap:8px}.rescue-availability-button{min-height:42px;white-space:nowrap}.rescue-header-status{max-width:330px;line-height:1.4}.rescue-logout{white-space:nowrap;flex:0 0 auto}
+        @media(max-width:900px){.rescue-header-inner{display:grid!important;grid-template-columns:minmax(0,1fr) auto;gap:12px!important;align-items:center!important}.rescue-header-identity{grid-column:1/-1;width:100%;flex:none}.rescue-header-actions{grid-column:1/-1;width:100%;display:grid!important;grid-template-columns:minmax(0,1fr) auto;align-items:start!important;gap:8px!important}.rescue-availability-area{width:100%;gap:7px}.rescue-availability-buttons{display:grid;grid-template-columns:1fr 1fr;gap:9px}.rescue-availability-button{width:100%;min-height:50px;padding:10px 12px!important;font-size:14px!important;white-space:nowrap}.rescue-header-status{max-width:none!important;font-size:12px!important}.rescue-logout{grid-column:2;grid-row:1;min-height:50px;padding:8px 12px!important;font-size:12px!important}}
       `}</style>
 
       <div className="rescue-app" style={{ minHeight: '100vh', background: '#F0F2FA', fontFamily: "var(--font-thai), 'Noto Sans Thai', sans-serif" }}>
         {/* Header */}
         <header style={{ background: '#fff', borderBottom: '1px solid #ECEEF5', padding: '14px 20px', position: 'sticky', top: 0, zIndex: 50 }}>
-          <div style={{ maxWidth: 960, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div className="rescue-header-inner" style={{ maxWidth: 960, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div className="rescue-header-identity" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <div className="rescue-header-mark" style={{ width: 40, height: 40, borderRadius: 11, overflow: 'hidden' }}><BrandLogo size={40} priority /></div>
               <div>
                 <div className="rescue-header-title" style={{ fontSize: 15, fontWeight: 700, color: '#111827' }}>{PROJECT_NAME}</div>
                 <div className="rescue-header-user" style={{ fontSize: 11, color: '#9CA3AF' }}>{profile?.full_name} · {profile?.agency ?? 'ไม่ระบุหน่วยงาน'}</div>
               </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ display: 'grid', gap: 4 }}>
+            <div className="rescue-header-actions" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div className="rescue-availability-area" style={{ display: 'grid', gap: 4 }}>
                 {hasMyActiveMission ? (
                   <>
                     <button
@@ -1112,30 +1114,34 @@ export default function OfficerDashboard() {
                   </>
                 ) : (
                   <>
-                    <div style={{ display: 'flex', gap: 6 }}>
+                    <div className="rescue-availability-buttons" style={{ display: 'flex', gap: 6 }}>
                       <button
+                        className="rescue-availability-button"
                         type="button"
                         onClick={() => void changeAvailability('available')}
                         disabled={availability === 'available' || actionLoading === 'availability'}
+                        aria-pressed={availability === 'available'}
                         title="เปิดรับงานอัตโนมัติและแชร์ตำแหน่งให้ระบบคัดเลือก"
                         style={{ padding: '8px 10px', borderRadius: 10, border: availability === 'available' ? '1px solid #167B4C' : '1px solid #A9DCC2', background: availability === 'available' ? '#167B4C' : '#EAF8F0', color: availability === 'available' ? '#fff' : '#167B4C', fontSize: 12, fontWeight: 800, cursor: availability === 'available' ? 'not-allowed' : 'pointer' }}
                       >
-                        ● เปิดรับงาน
+                        {actionLoading === 'availability' && availability !== 'available' ? 'กำลังเปิดรับ...' : '● เปิดรับงาน'}
                       </button>
                       <button
+                        className="rescue-availability-button"
                         type="button"
                         onClick={() => void changeAvailability('offline')}
                         disabled={availability === 'offline' || actionLoading === 'availability'}
+                        aria-pressed={availability === 'offline'}
                         title="พักงาน: ไม่รับข้อเสนอเคสใหม่"
                         style={{ padding: '8px 10px', borderRadius: 10, border: availability === 'offline' ? '1px solid #B42318' : '1px solid #F0C4C0', background: availability === 'offline' ? '#B42318' : '#FFF2F1', color: availability === 'offline' ? '#fff' : '#A33A20', fontSize: 12, fontWeight: 800, cursor: availability === 'offline' ? 'not-allowed' : 'pointer' }}
                       >
-                        ○ พักงาน
+                        {actionLoading === 'availability' && availability !== 'offline' ? 'กำลังพักงาน...' : '○ พักงาน'}
                       </button>
                     </div>
-                    <span style={{ color: availability === 'available' ? '#167B4C' : '#A33A20', fontSize: 11, fontWeight: 700 }}>
+                    <span className="rescue-header-status" style={{ color: availability === 'available' ? '#167B4C' : '#A33A20', fontSize: 11, fontWeight: 700 }}>
                       {availability === 'available' ? 'กำลังเข้าคิว ระบบจะส่งข้อเสนอเคสมาให้กดรับ' : 'พักงานอยู่ · กด “เปิดรับงาน” เมื่อต้องการเข้าคิว'}
                     </span>
-                    {availability === 'available' && dispatchReadiness && !dispatchReadiness.ready && <span style={{ maxWidth: 205, color: '#A33A20', fontSize: 10, lineHeight: 1.25 }}>ยังไม่เข้าคิวงาน: {!dispatchReadiness.has_current_location ? 'รอพิกัดปัจจุบัน' : dispatchReadiness.service_area_count < 1 ? 'ยังไม่กำหนดพื้นที่บริการ' : 'มีภารกิจค้างอยู่'}</span>}
+                    {availability === 'available' && dispatchReadiness && !dispatchReadiness.ready && <span className="rescue-header-status" style={{ maxWidth: 205, color: '#A33A20', fontSize: 10, lineHeight: 1.25 }}>ยังไม่เข้าคิวงาน: {!dispatchReadiness.has_current_location ? 'รอพิกัดปัจจุบัน' : dispatchReadiness.service_area_count < 1 ? 'ยังไม่กำหนดพื้นที่บริการ' : 'มีภารกิจค้างอยู่'}</span>}
                   </>
                 )}
               </div>

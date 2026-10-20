@@ -1,13 +1,15 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { Activity, Clock3, MapPin, RefreshCw, Users } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import type { RescuerMapMarker } from '@/components/rescuer-location-map';
+import styles from './admin-rescuer-map-panel.module.css';
 
 const RescuerLocationMap = dynamic(() => import('@/components/rescuer-location-map'), {
   ssr: false,
-  loading: () => <div style={{ height: 420, borderRadius: 16, background: '#EEF4FA' }} />,
+  loading: () => <div className={styles.mapLoading} role="status">กำลังโหลดแผนที่...</div>,
 });
 
 type LocationRow = {
@@ -35,23 +37,32 @@ function getMapErrorMessage(error: { code?: string; message?: string; hint?: str
 export default function AdminRescuerMapPanel() {
   const [locations, setLocations] = useState<LocationRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+
+  const loadLocations = useCallback(async () => {
+    setRefreshing(true);
+    const { data, error: fetchError } = await supabase.rpc('get_admin_rescuer_locations');
+    if (fetchError) {
+      setError(getMapErrorMessage(fetchError));
+    } else {
+      setLocations((data as LocationRow[]) ?? []);
+      setLastUpdated(new Date().toISOString());
+      setError('');
+    }
+    setLoading(false);
+    setRefreshing(false);
+  }, []);
 
   useEffect(() => {
-    const load = async () => {
-      const { data, error: fetchError } = await supabase.rpc('get_admin_rescuer_locations');
-      if (fetchError) {
-        setError(getMapErrorMessage(fetchError));
-      } else {
-        setLocations((data as LocationRow[]) ?? []);
-        setError('');
-      }
-      setLoading(false);
+    const initialLoad = window.setTimeout(() => { void loadLocations(); }, 0);
+    const timer = window.setInterval(() => { void loadLocations(); }, 10_000);
+    return () => {
+      window.clearTimeout(initialLoad);
+      window.clearInterval(timer);
     };
-    void load();
-    const timer = window.setInterval(() => { void load(); }, 10_000);
-    return () => window.clearInterval(timer);
-  }, []);
+  }, [loadLocations]);
 
   const markers: RescuerMapMarker[] = locations.map((item) => ({
     id: item.rescuer_id,
@@ -64,21 +75,92 @@ export default function AdminRescuerMapPanel() {
     updatedAt: item.location_updated_at,
   }));
 
+  const availableCount = locations.filter((item) => item.availability === 'available').length;
+  const busyCount = locations.filter((item) => item.availability === 'busy').length;
+  const offlineCount = locations.filter((item) => item.availability === 'offline').length;
+
   return (
-    <div className="admin-panel" style={{ display: 'grid', gap: 16 }}>
-      <section className="admin-form-card">
-        <strong>ตำแหน่งทีมกู้ภัย</strong>
-        <p style={{ margin: '4px 0 0', color: '#5C677D', fontSize: 13 }}>แสดงเฉพาะตำแหน่งที่อัปเดตใน 15 นาทีล่าสุด และรีเฟรชทุก 10 วินาที</p>
+    <div className={styles.panel}>
+      <section className={styles.intro}>
+        <div className={styles.introCopy}>
+          <span className={styles.eyebrow}><Activity size={14} /> ศูนย์ควบคุมกำลังปฏิบัติการ</span>
+          <h2>ตำแหน่งทีมกู้ภัย</h2>
+          <p>ติดตามตำแหน่งล่าสุดและความพร้อมของทีม เพื่อประสานงานช่วยเหลือได้ทันเวลา</p>
+        </div>
+        <div className={styles.liveStatus}>
+          <span className={styles.liveDot} />
+          <span>อัปเดตอัตโนมัติทุก 10 วินาที</span>
+        </div>
       </section>
-      {error && <div className="admin-alert" style={{ padding: 13, background: '#FFF1F0', color: '#B42318', fontSize: 13 }}>{error}</div>}
-      {loading ? <div style={{ height: 420, borderRadius: 16, background: '#EEF4FA' }} /> : markers.length ? (
-        <RescuerLocationMap markers={markers} />
-      ) : (
-        <div className="admin-form-card" style={{ padding: 24, color: '#5C677D', textAlign: 'center' }}>ยังไม่มีทีมที่แชร์ตำแหน่งล่าสุด</div>
+
+      <section className={styles.summary} aria-label="สรุปสถานะทีมกู้ภัย">
+        <article className={`${styles.statCard} ${styles.statTotal}`}>
+          <span className={styles.statIcon}><Users size={19} /></span>
+          <span className={styles.statCopy}><small>แชร์ตำแหน่งล่าสุด</small><strong>{loading ? '—' : locations.length}<small> ทีม</small></strong></span>
+        </article>
+        <article className={`${styles.statCard} ${styles.statAvailable}`}>
+          <span className={styles.statIcon}><span className={styles.statusDot} /></span>
+          <span className={styles.statCopy}><small>พร้อมรับงาน</small><strong>{loading ? '—' : availableCount}<small> ทีม</small></strong></span>
+        </article>
+        <article className={`${styles.statCard} ${styles.statBusy}`}>
+          <span className={styles.statIcon}><span className={styles.statusDot} /></span>
+          <span className={styles.statCopy}><small>กำลังปฏิบัติการ</small><strong>{loading ? '—' : busyCount}<small> ทีม</small></strong></span>
+        </article>
+        <article className={`${styles.statCard} ${styles.statOffline}`}>
+          <span className={styles.statIcon}><span className={styles.statusDot} /></span>
+          <span className={styles.statCopy}><small>ไม่พร้อมรับงาน</small><strong>{loading ? '—' : offlineCount}<small> ทีม</small></strong></span>
+        </article>
+      </section>
+
+      {error && (
+        <div className={styles.error} role="alert">
+          <span>{error}</span>
+          <button type="button" onClick={() => void loadLocations()} disabled={refreshing}>
+            <RefreshCw size={15} /> ลองอีกครั้ง
+          </button>
+        </div>
       )}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', color: '#5C677D', fontSize: 12 }}>
-        <span>● น้ำเงิน: พร้อมรับงาน</span><span>● แดง: กำลังปฏิบัติภารกิจ</span><span>● เทา: ไม่พร้อมรับงาน</span>
-      </div>
+
+      <section className={styles.mapCard} aria-label="แผนที่ตำแหน่งกู้ภัย">
+        <div className={styles.mapToolbar}>
+          <div className={styles.mapHeading}>
+            <span className={styles.mapIcon}><MapPin size={18} /></span>
+            <div><strong>แผนที่ปฏิบัติการ</strong><small>แสดงตำแหน่งที่อัปเดตภายใน 15 นาทีล่าสุด</small></div>
+          </div>
+          <div className={styles.mapActions}>
+            {lastUpdated && (
+              <span className={styles.updatedAt}>
+                <Clock3 size={14} />
+                <span>อัปเดต {new Date(lastUpdated).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+              </span>
+            )}
+            <button className={styles.refreshButton} type="button" onClick={() => void loadLocations()} disabled={refreshing} aria-label="รีเฟรชตำแหน่งทีมกู้ภัย">
+              <RefreshCw size={16} className={refreshing ? styles.spinning : undefined} />
+              <span>{refreshing ? 'กำลังอัปเดต' : 'รีเฟรช'}</span>
+            </button>
+          </div>
+        </div>
+
+        <div className={styles.mapFrame}>
+          {!loading && markers.length === 0 && (
+            <div className={styles.emptyState} role="status">
+              <span><MapPin size={20} /></span>
+              <strong>ยังไม่มีทีมที่แชร์ตำแหน่งล่าสุด</strong>
+              <small>แผนที่จะแสดงทีมเมื่อเจ้าหน้าที่เปิดแชร์ตำแหน่ง</small>
+            </div>
+          )}
+          <RescuerLocationMap markers={markers} height={560} />
+        </div>
+
+        <footer className={styles.mapFooter}>
+          <span className={styles.freshness}><i /> แสดงเฉพาะพิกัดไม่เกิน 15 นาที</span>
+          <div className={styles.legend} aria-label="คำอธิบายสีหมุด">
+            <span><i className={styles.legendAvailable} /> พร้อมรับงาน</span>
+            <span><i className={styles.legendBusy} /> กำลังปฏิบัติการ</span>
+            <span><i className={styles.legendOffline} /> ไม่พร้อมรับงาน</span>
+          </div>
+        </footer>
+      </section>
     </div>
   );
 }
