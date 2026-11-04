@@ -4,7 +4,7 @@
 insert into public.access_codes (role, code, active)
 values
   ('rescuer', 'RESCUE2026', true),
-  ('shelter_staff', 'SHELTER2026', true)
+  ('shelter_staff', 'OFFICER2026', true)
 on conflict (code) do update
 set role = excluded.role,
     active = excluded.active;
