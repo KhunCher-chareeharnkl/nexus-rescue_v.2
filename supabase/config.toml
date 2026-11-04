@@ -25,3 +25,7 @@ enable_signup = true
 [auth.email]
 enable_signup = true
 enable_confirmations = false
+
+[auth.email.template.magic_link]
+subject = "Nexus Rescue - รหัสเข้าสู่ระบบ"
+content_path = "./supabase/templates/magic_link.html"
