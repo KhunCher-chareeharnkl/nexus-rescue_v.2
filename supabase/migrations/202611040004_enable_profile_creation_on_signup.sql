@@ -2,6 +2,45 @@
 
 begin;
 
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  invite record;
+begin
+  select *
+  into invite
+  from public.staff_invites
+  where lower(email) = lower(new.email)
+    and used = false
+  limit 1;
+
+  insert into public.profiles (id, full_name, role, shelter_id)
+  values (
+    new.id,
+    coalesce(new.raw_user_meta_data->>'full_name', 'เจ้าหน้าที่'),
+    coalesce(invite.role, 'rescuer'),
+    invite.shelter_id
+  )
+  on conflict (id) do update
+    set full_name = excluded.full_name,
+        role = excluded.role,
+        shelter_id = excluded.shelter_id,
+        is_active = true;
+
+  if invite.id is not null then
+    update public.staff_invites
+    set used = true
+    where id = invite.id;
+  end if;
+
+  return new;
+end;
+$$;
+
 create or replace function public.redeem_access_code(
   p_email text,
   p_code text,
